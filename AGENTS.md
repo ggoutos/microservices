@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**EazyBank Microservices** is a Java-based microservices architecture using Spring Boot 4.0+. Each service is independently deployable with its own database, API documentation, and testing suite. Current services: `accounts`, `cards`.
+**EazyBank Microservices** is a Java-based microservices architecture using Spring Boot 4.0+. Each service is independently deployable with its own database, API documentation, and testing suite. Current services: `accounts` (port 8080), `cards` (port 9000), `loans` (port 8090).
 
 ## Architecture Patterns
 
@@ -41,16 +41,20 @@ service-name/
 
 ### Build & Run
 ```bash
+# Build individual service
 cd accounts
 mvn clean install           # Full build with tests
-mvn spring-boot:run         # Start service (port 8080)
+mvn spring-boot:run         # Start service (uses port from application.yml)
 mvn test                    # Run tests only
+
+# Service ports: accounts (8080), cards (9000), loans (8090)
 ```
 
 ### Debugging
 - Services log to stdout; watch for Hibernate SQL output (enabled via `show-sql: true`)
-- H2 console accessible at `http://localhost:8080/h2-console`
-- OpenAPI docs at `http://localhost:8080/swagger-ui.html`
+- H2 console accessible at `http://localhost:{PORT}/h2-console` (e.g., accounts: 8080, cards: 9000, loans: 8090)
+- OpenAPI (Swagger) docs at `http://localhost:{PORT}/swagger-ui.html`
+- Actuator health endpoint: `http://localhost:{PORT}/actuator/health`
 
 ### Common Patterns to Apply
 
@@ -65,10 +69,11 @@ mvn test                    # Run tests only
 ## Dependencies & Versions
 
 - **Java**: 25 (module system enabled)
-- **Spring Boot**: 4.0.3 (accounts), 4.0.4 (cards)
+- **Spring Boot**: 4.0.4 (all services)
 - **Spring Data JPA**: Included via starter-parent
 - **Validation**: spring-boot-starter-validation (Jakarta constraints)
 - **API Docs**: springdoc-openapi-starter-webmvc-ui v3.0.2
+- **Actuator**: spring-boot-starter-actuator (for metrics, health checks)
 - **Dev Tools**: Lombok, DevTools (for hot reload), H2 database
 
 ## Integration Points
@@ -102,7 +107,8 @@ mvn test                    # Run tests only
 
 ## Testing Conventions
 
-- Test classes: `{Service}ApplicationTests.java` in `src/test/java`
+- Test classes: `{Service}ApplicationTests.java` in `src/test/java` (e.g., `AccountsApplicationTests`, `CardsApplicationTests`, `LoansApplicationTests`)
 - Use Spring Test fixtures: `@SpringBootTest`, `@DataJpaTest` for repositories
 - Mock external services; test auditing with mocked `AuditorAware`
+- Each service has a minimal test that validates context loads: `contextLoads()` test method
 

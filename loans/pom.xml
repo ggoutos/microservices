@@ -9,10 +9,10 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.ggoutos</groupId>
-    <artifactId>cards</artifactId>
+    <artifactId>loans</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>cards</name>
-    <description>Microservice for cards</description>
+    <name>loans</name>
+    <description>Microservice for Loans</description>
     <url/>
     <licenses>
         <license/>
