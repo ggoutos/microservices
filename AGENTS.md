@@ -22,9 +22,9 @@ service-name/
 │   ├── exception/                         # Custom exceptions + GlobalExceptionHandler
 │   ├── audit/                             # Auditing implementation (e.g., AuditAwareImpl)
 │   └── constants/                         # Immutable constants class
-├── Dockerfile                             # Multi-stage build (accounts only currently)
-├── compose.yaml                           # Docker Compose (accounts only currently)
-└── pom.xml                                # Maven configuration
+├── Dockerfile                             # Multi-stage build (accounts only)
+└── pom.xml                                # Maven configuration (includes image build plugins)
+docker-compose.yml                         # Root Docker Compose for all services
 ```
 
 ### Key Design Decisions
@@ -54,20 +54,27 @@ mvn test             # Run tests only
 
 ### Docker
 ```bash
-# Build and run with Docker Compose (accounts service)
-cd accounts
+# Build and run all services with Docker Compose (from root)
 docker compose up --build
 
-# Multi-stage Docker build (defined in accounts/Dockerfile):
-# Stage 1: Maven 3.9 + Amazon Corretto JDK 25 → builds JAR
-# Stage 2: jlink creates minimal custom JRE
-# Stage 3: Alpine 3.23 final image — minimal footprint
+# Individual service image builds:
 
-# Build OCI image via Spring Boot Maven plugin (loans service)
+# 1. Accounts: Multi-stage Docker build (JVM or GraalVM Native targets)
+cd accounts
+docker build --target jvm -t ggoutos/accounts:latest .
+# Or build via Spring Boot Maven plugin (Buildpacks):
+mvn spring-boot:build-image
+
+# 2. Loans: Build OCI image via Spring Boot Maven plugin (Buildpacks)
 # Image name: ggoutos/loans:latest
 cd loans
 mvn spring-boot:build-image
-````
+
+# 3. Cards: Build OCI image via Google Jib Maven plugin
+# Image name: ggoutos/cards:latest
+cd cards
+mvn compile jib:dockerBuild
+```
 
 [//]: # (The `.ai/` directory contains a local AI coding assistant setup:)
 
@@ -148,13 +155,13 @@ Currently **none** — services are fully isolated with independent databases. M
 
 | File                           | Purpose                                                    |
 |--------------------------------|------------------------------------------------------------|
+| `docker-compose.yml`           | Root Docker Compose managing all 3 services                |
 | `{Service}Application.java`    | Entry point; defines API metadata via `@OpenAPIDefinition` |
 | `GlobalExceptionHandler.java`  | Centralized error handling; extend for new exception types |
 | `BaseEntity.java`              | Auditing template; all entities inherit audit fields       |
 | `{Service}Constants.java`      | HTTP status codes and business constants                   |
 | `application.yml`              | Database URL, JPA config, server port                      |
-| `Dockerfile`                   | Multi-stage Docker build (accounts service)                |
-| `compose.yaml`                 | Docker Compose config (accounts service)                   |
+| `accounts/Dockerfile`          | Multi-stage Docker build (JVM & Native) for accounts       |
 | `AGENTS.md`                    | Github Copilot Plugin rules file                           |
 | `.aiassistant/rules/AGENTS.md` | JetBrains AI Assistant rules file                          |
 
@@ -166,7 +173,11 @@ Currently **none** — services are fully isolated with independent databases. M
 4. **Exception Handling**: Add custom exceptions and register in `GlobalExceptionHandler`
 5. **Documentation**: Update `@Tag` and `@Operation` OpenAPI annotations on new endpoints
 6. **Auditing**: Ensure entity has audit fields; verify `AuditAwareImpl` provides auditor name
-7. **Docker**: If containerizing a new service, model `Dockerfile` and `compose.yaml` after accounts
+7. **Docker**: Follow the existing image build strategy:
+    - `accounts`: Use `Dockerfile` (multi-stage) or Buildpacks (`spring-boot:build-image`)
+    - `loans`: Use Buildpacks (`spring-boot:build-image`)
+    - `cards`: Use Jib (`jib-maven-plugin`)
+    - Always ensure images are tagged as `ggoutos/{service}:latest` to match `docker-compose.yml`.
 
 ## Testing Conventions
 
