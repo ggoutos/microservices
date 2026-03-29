@@ -11,6 +11,7 @@ services:
   server:
     build:
       context: .
+      target: jvm
     ports:
       - 8080:8080
 
