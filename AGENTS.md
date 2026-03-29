@@ -62,9 +62,12 @@ docker compose up --build
 # Stage 1: Maven 3.9 + Amazon Corretto JDK 25 → builds JAR
 # Stage 2: jlink creates minimal custom JRE
 # Stage 3: Alpine 3.23 final image — minimal footprint
-```
 
-[//]: # (### AI Development Environment)
+# Build OCI image via Spring Boot Maven plugin (loans service)
+# Image name: ggoutos/loans:latest
+cd loans
+mvn spring-boot:build-image
+````
 
 [//]: # (The `.ai/` directory contains a local AI coding assistant setup:)
 
@@ -143,17 +146,17 @@ Currently **none** — services are fully isolated with independent databases. M
 
 ## Critical Files to Know
 
-| File                          | Purpose                                                    |
-|-------------------------------|------------------------------------------------------------|
-| `{Service}Application.java`   | Entry point; defines API metadata via `@OpenAPIDefinition` |
-| `GlobalExceptionHandler.java` | Centralized error handling; extend for new exception types |
-| `BaseEntity.java`             | Auditing template; all entities inherit audit fields       |
-| `{Service}Constants.java`     | HTTP status codes and business constants                   |
-| `application.yml`             | Database URL, JPA config, server port                      |
-| `Dockerfile`                  | Multi-stage Docker build (accounts service)                |
-| `compose.yaml`                | Docker Compose config (accounts service)                   |
-
-[//]: # (| `.ai/docker-compose.yml`      | Local AI dev environment &#40;Ollama + Aider&#41;                  |)
+| File                           | Purpose                                                    |
+|--------------------------------|------------------------------------------------------------|
+| `{Service}Application.java`    | Entry point; defines API metadata via `@OpenAPIDefinition` |
+| `GlobalExceptionHandler.java`  | Centralized error handling; extend for new exception types |
+| `BaseEntity.java`              | Auditing template; all entities inherit audit fields       |
+| `{Service}Constants.java`      | HTTP status codes and business constants                   |
+| `application.yml`              | Database URL, JPA config, server port                      |
+| `Dockerfile`                   | Multi-stage Docker build (accounts service)                |
+| `compose.yaml`                 | Docker Compose config (accounts service)                   |
+| `AGENTS.md`                    | Github Copilot Plugin rules file                           |
+| `.aiassistant/rules/AGENTS.md` | JetBrains AI Assistant rules file                          |
 
 ## Before Adding New Features
 
