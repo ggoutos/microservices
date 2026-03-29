@@ -41,7 +41,7 @@ COPY src/ src/
 RUN mvn -Pnative -DskipTests package
 
 # ---- Runtime stage for GraalVM native Image ----
-FROM debian:bookworm-slim as native
+FROM debian:bookworm-slim AS native
 LABEL "org.opencontainers.image.authors"="ggoutos.com"
 WORKDIR /app
 COPY --from=native-builder /app/target/accounts /app/accounts
