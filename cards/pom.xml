@@ -11,6 +11,7 @@
     <groupId>com.ggoutos</groupId>
     <artifactId>cards</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
     <name>cards</name>
     <description>Microservice for cards</description>
     <url/>
@@ -98,6 +99,16 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <to>
+                        <image>ggoutos/${project.artifactId}:latest</image>
+                    </to>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
