@@ -1,6 +1,12 @@
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, refresh
+
 spring:
   application:
     name: accounts
@@ -21,3 +27,4 @@ spring:
       password: ${CONFIG_SERVER_PASSWORD}
   config:
     import: "optional:configserver:http://localhost:8071/"
+

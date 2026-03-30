@@ -1,5 +1,12 @@
 server:
   port: 8090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, refresh
+
 spring:
   application:
     name: loans
