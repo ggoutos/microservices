@@ -1,13 +1,11 @@
 server:
   port: 9000
+
 spring:
   application:
     name: cards
   datasource:
-    url: jdbc:h2:mem:testdb
     driverClassName: org.h2.Driver
-    username: sa
-    password: ''
   h2:
     console:
       enabled: true
@@ -15,3 +13,10 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+  cloud:
+    config:
+      uri: http://localhost:8071/
+      username: ${CONFIG_SERVER_USER}
+      password: ${CONFIG_SERVER_PASSWORD}
+  config:
+    import: "optional:configserver:http://localhost:8071/"

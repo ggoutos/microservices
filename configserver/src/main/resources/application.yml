@@ -1,6 +1,35 @@
+server:
+  port: 8071
+
+# Disable actuator endpoints you don't need
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info  # Don't expose 'env' or 'configprops'
+encrypt:
+  key: ${ENCRYPTION_KEY} # This is the encryption key that will be used to encrypt and decrypt properties. You should set this to a secure value in production.
+
 spring:
   application:
     name: configserver
-    
-server:
-  port: 8071
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:git} # This will load configuration files from git.
+  security:
+    user:
+      name: ${CONFIG_SERVER_USER} # This is the username that will be used to access the config server.
+      password: ${CONFIG_SERVER_PASSWORD} # This is the password that will be used to access the config server.
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/shared, classpath:/config # This will look for configuration files in the "shared" and "config" directories relative to the classpath.
+        git:
+          uri: ${GIT_URI} # This should the URI of the private git repository that contains the configuration files, different from the current repository.
+          username: ${GIT_USERNAME}
+          password: ${GIT_TOKEN}
+          default-label: master # This will use the "master" branch of the git repository by default.
+          search-paths: /.config # This will look for configuration files in the ".config" directory of the config-repo repository.
+          timeout: 5 # This will set the timeout for connecting to the git repository in seconds.
+          clone-on-start: true # This will clone the git repository when the config server starts. This is useful for development, but you might want to set it to false in production for better performance.
+          force-pull: true # This will force the config server to pull the latest changes from the git repository every time it starts. This is useful for development, but you might want to set it to false in production for better performance.

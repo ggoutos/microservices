@@ -1,6 +1,8 @@
 server:
   port: 8090
 spring:
+  application:
+    name: loans
   datasource:
     url: jdbc:h2:mem:testdb
     driverClassName: org.h2.Driver
@@ -14,3 +16,10 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+  cloud:
+    config:
+      uri: http://localhost:8071/
+      username: ${CONFIG_SERVER_USER}
+      password: ${CONFIG_SERVER_PASSWORD}
+  config:
+    import: "optional:configserver:http://localhost:8071/"
