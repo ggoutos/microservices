@@ -27,11 +27,11 @@ spring:
     host: localhost
     port: 5672
     username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    password: ${RABBITMQ_PASSWORD:guest}0
   cloud:
     config:
-      uri: http://localhost:8071/
+      uri: ${SPRING_CLOUD_CONFIG_URI:http://localhost:8071}
       username: ${CONFIG_SERVER_USER}
       password: ${CONFIG_SERVER_PASSWORD}
   config:
-    import: "optional:configserver:http://localhost:8071/"
+    import: "configserver:${spring.cloud.config.uri}"
