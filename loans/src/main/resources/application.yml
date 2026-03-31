@@ -5,7 +5,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh
+        include: health, info, refresh, busrefresh
 
 spring:
   application:
@@ -23,6 +23,11 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   cloud:
     config:
       uri: http://localhost:8071/
