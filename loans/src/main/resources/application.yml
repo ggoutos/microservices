@@ -11,10 +11,7 @@ spring:
   application:
     name: loans
   datasource:
-    url: jdbc:h2:mem:testdb
     driverClassName: org.h2.Driver
-    username: sa
-    password: ''
   h2:
     console:
       enabled: true
@@ -24,10 +21,10 @@ spring:
       ddl-auto: update
     show-sql: true
   rabbitmq:
-    host: localhost
+    host: ${SPRING_RABBITMQ_HOST:localhost}
     port: 5672
-    username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASSWORD:guest}0
+    username: ${SPRING_RABBITMQ_USER:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
     config:
       uri: ${SPRING_CLOUD_CONFIG_URI:http://localhost:8071}

@@ -16,25 +16,28 @@ services:
       service: network-deploy-service
 
   configserver:
-    image: ggoutos/configserver:latest
+    image: ${CONFIGSERVER_IMAGE}
     container_name: configserver-ms
     ports:
       - "8071:8071"
     depends_on:
       rabbit:
         condition: service_healthy
+    env_file:
+      - .env
+      - .env.local    # gitignored, holds real secrets
     healthcheck:
-      test: "curl --fail --silent localhost:8071/actuator/health/readiness | grep UP || exit 1"
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8071/actuator/health/readiness || exit 1"]
       interval: 10s     # checks every 10 seconds
       timeout: 5s       # timeout after which the healthcheck fails
-      retries: 3        # retries when the healthcheck fails
+      retries: 5        # retries when the healthcheck fails
       start_period: 10s # wait for container startup before checking healthcheck
     extends:
       file: common-config.yml
       service: microservice-base-config
 
   accounts:
-    image: ggoutos/accounts:latest
+    image: ${ACCOUNTS_IMAGE}
     container_name: accounts-ms
 #    build:
 #      context: .
@@ -44,24 +47,30 @@ services:
     depends_on:
       configserver:
         condition: service_healthy
+    env_file:
+      - .env
+      - .env.local    # gitignored, holds real secrets
     extends:
       file: common-config.yml
       service: microservice-base-config
 
   cards:
-    image: ggoutos/cards:latest
+    image: ${CARDS_IMAGE}
     container_name: cards-ms
     ports:
       - "9000:9000"
     depends_on:
       configserver:
         condition: service_healthy
+    env_file:
+      - .env
+      - .env.local    # gitignored, holds real secrets
     extends:
       file: common-config.yml
       service: microservice-base-config
 
   loans:
-    image: ggoutos/loans:latest
+    image: ${LOANS_IMAGE}
     container_name: loans-ms
     ports:
       - "8090:8090"
@@ -74,9 +83,11 @@ services:
       # XX:ActiveProcessorCount Aligns JVM CPU detection with the container's CPU limit
       # Xss256k Reduces per-thread stack size from default 1MB to 256KB
       - JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xss256k
-      - SPRING_PROFILES_ACTIVE=default
+#      - SPRING_PROFILES_ACTIVE=default
 #      - SPRING_APPLICATION_NAME=accounts # test if it works w/o this property
-      - SPRING_CLOUD_CONFIG_URI=http://configserver:8071
+    env_file:
+      - .env
+      - .env.local    # gitignored, holds real secrets
     extends:
       file: common-config.yml
       service: microservice-base-config

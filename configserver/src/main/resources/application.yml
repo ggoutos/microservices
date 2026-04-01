@@ -40,10 +40,10 @@ spring:
       name: ${CONFIG_SERVER_USER} # This is the username that will be used to access the config server.
       password: ${CONFIG_SERVER_PASSWORD} # This is the password that will be used to access the config server.
   rabbitmq:
-    host: localhost
+    host: ${SPRING_RABBITMQ_HOST:localhost}
     port: 5672
-    username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    username: ${SPRING_RABBITMQ_USER:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
     config:
       server:
