@@ -25,7 +25,7 @@ services:
         condition: service_healthy
     env_file:
       - .env
-      - .env.local    # gitignored, holds real secrets
+      - .env.${APP_ENV}
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8071/actuator/health/readiness || exit 1"]
       interval: 10s     # checks every 10 seconds
@@ -49,7 +49,7 @@ services:
         condition: service_healthy
     env_file:
       - .env
-      - .env.local    # gitignored, holds real secrets
+      - .env.${APP_ENV}
     extends:
       file: common-config.yml
       service: microservice-base-config
@@ -64,7 +64,7 @@ services:
         condition: service_healthy
     env_file:
       - .env
-      - .env.local    # gitignored, holds real secrets
+      - .env.${APP_ENV}
     extends:
       file: common-config.yml
       service: microservice-base-config
@@ -87,7 +87,7 @@ services:
 #      - SPRING_APPLICATION_NAME=accounts # test if it works w/o this property
     env_file:
       - .env
-      - .env.local    # gitignored, holds real secrets
+      - .env.${APP_ENV}
     extends:
       file: common-config.yml
       service: microservice-base-config
