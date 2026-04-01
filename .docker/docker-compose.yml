@@ -20,6 +20,9 @@ services:
     container_name: accountsdb
     ports:
       - "3307:3306"
+    env_file:
+      - .env
+      - .env.${APP_ENV}
     environment:
       MYSQL_DATABASE: accountsdb
     extends:
@@ -31,6 +34,9 @@ services:
     container_name: loansdb
     ports:
       - "3308:3306"
+    env_file:
+      - .env
+      - .env.${APP_ENV}
     environment:
       MYSQL_DATABASE: loansdb
     extends:
@@ -42,6 +48,9 @@ services:
     container_name: cardsdb
     ports:
       - "3309:3306"
+    env_file:
+      - .env
+      - .env.${APP_ENV}
     environment:
       MYSQL_DATABASE: cardsdb
     extends:
