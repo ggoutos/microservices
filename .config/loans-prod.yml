@@ -2,4 +2,4 @@ spring:
   datasource:
     username: root
     password: root
-    url: jdbc:mysql://localhost:3309/loansdb
+    url: jdbc:mysql://accountsdb:3309/loansdb
