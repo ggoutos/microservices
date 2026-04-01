@@ -26,7 +26,7 @@ services:
       interval: 10s     # checks every 10 seconds
       timeout: 5s       # timeout after which the healthcheck fails
       retries: 5        # retries when the healthcheck fails
-      start_period: 10s # wait for container startup before checking healthcheck
+      start_period: 20s # wait for container startup before checking healthcheck
     deploy:
       resources:
         limits:
