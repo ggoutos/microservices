@@ -1,5 +1,5 @@
 spring:
   datasource:
-    username: sa
-    password: '{cipher}541705ef1512b154d5d5b45448faf8b412e1ab6b9355dae9f62e6cc7d27106f3'
-    url: jdbc:h2:mem:testdb
+    username: root
+    password: root
+    url: jdbc:mysql://localhost:3306/accountsdb

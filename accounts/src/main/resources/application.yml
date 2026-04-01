@@ -10,13 +10,8 @@ management:
 spring:
   application:
     name: accounts
-  datasource:
-    driverClassName: org.h2.Driver
-  h2:
-    console:
-      enabled: true
   jpa:
-#    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
