@@ -1,0 +1,13 @@
+services:
+  network-deploy-service:
+    networks:
+      - microservices-network
+
+  microservice-base-config:
+    extends:
+      service: network-deploy-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M

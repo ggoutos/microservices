@@ -1,0 +1,97 @@
+services:
+  rabbit:
+    image: rabbitmq:4.2.5-management-alpine
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: rabbitmq-diagnostics check_port_connectivity
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
+  configserver:
+    image: ${CONFIGSERVER_IMAGE}
+    container_name: configserver-ms
+    ports:
+      - "8071:8071"
+    depends_on:
+      rabbit:
+        condition: service_healthy
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8071/actuator/health/readiness || exit 1"]
+      interval: 10s     # checks every 10 seconds
+      timeout: 5s       # timeout after which the healthcheck fails
+      retries: 5        # retries when the healthcheck fails
+      start_period: 10s # wait for container startup before checking healthcheck
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
+  accounts:
+    image: ${ACCOUNTS_IMAGE}
+    container_name: accounts-ms
+#    build:
+#      context: .
+#      target: jvm
+    ports:
+      - "8080:8080"
+    depends_on:
+      configserver:
+        condition: service_healthy
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
+  cards:
+    image: ${CARDS_IMAGE}
+    container_name: cards-ms
+    ports:
+      - "9000:9000"
+    depends_on:
+      configserver:
+        condition: service_healthy
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
+  loans:
+    image: ${LOANS_IMAGE}
+    container_name: loans-ms
+    ports:
+      - "8090:8090"
+    depends_on:
+      configserver:
+        condition: service_healthy
+    environment:
+      # BPL_JVM_THREAD_COUNT Tells Paketo memory calculator the expected thread count
+      - BPL_JVM_THREAD_COUNT=50
+      # XX:ActiveProcessorCount Aligns JVM CPU detection with the container's CPU limit
+      # Xss256k Reduces per-thread stack size from default 1MB to 256KB
+      - JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xss256k
+#      - SPRING_PROFILES_ACTIVE=default
+#      - SPRING_APPLICATION_NAME=accounts # test if it works w/o this property
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
+networks:
+  microservices-network:
+    driver: bridge

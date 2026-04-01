@@ -1,23 +1,30 @@
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, refresh, busrefresh
+
 spring:
   application:
     name: accounts
-  datasource:
-    driverClassName: org.h2.Driver
-  h2:
-    console:
-      enabled: true
   jpa:
-#    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${SPRING_RABBITMQ_USER:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
     config:
-      uri: http://localhost:8071/
+      uri: ${SPRING_CLOUD_CONFIG_URI:http://localhost:8071}
       username: ${CONFIG_SERVER_USER}
       password: ${CONFIG_SERVER_PASSWORD}
   config:
-    import: "optional:configserver:http://localhost:8071/"
+    import: "configserver:${spring.cloud.config.uri}"
+

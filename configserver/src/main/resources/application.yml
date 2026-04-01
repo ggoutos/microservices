@@ -6,7 +6,27 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh  # Don't expose 'env' or 'configprops'
+  health:
+    readiness-state:
+      enabled: true
+    liveness-state:
+      enabled: true
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include:
+            - rabbit
+
+logging:
+  level:
+    org:
+      springframework:
+        security: warn
+
 encrypt:
   key: ${ENCRYPTION_KEY} # This is the encryption key that will be used to encrypt and decrypt properties. You should set this to a secure value in production.
 
@@ -19,6 +39,11 @@ spring:
     user:
       name: ${CONFIG_SERVER_USER} # This is the username that will be used to access the config server.
       password: ${CONFIG_SERVER_PASSWORD} # This is the password that will be used to access the config server.
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${SPRING_RABBITMQ_USER:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
     config:
       server:
