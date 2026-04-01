@@ -2,4 +2,4 @@ spring:
   datasource:
     username: root
     password: root
-    url: jdbc:mysql://localhost:3308/cardsdb
+    url: jdbc:mysql://cardsdb:3306/cardsdb

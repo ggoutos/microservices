@@ -1,6 +1,10 @@
 server:
   port: 8090
 
+logging:
+  level:
+    org.springframework: warn
+
 management:
   endpoints:
     web:
@@ -10,16 +14,15 @@ management:
 spring:
   application:
     name: loans
-  datasource:
-    driverClassName: org.h2.Driver
-  h2:
-    console:
-      enabled: true
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     show-sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: 5672

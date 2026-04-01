@@ -15,6 +15,48 @@ services:
       file: common-config.yml
       service: network-deploy-service
 
+  accountsdb:
+    image: mysql:lts
+    container_name: accountsdb
+    ports:
+      - "3307:3306"
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    environment:
+      MYSQL_DATABASE: accountsdb
+    extends:
+      file: common-config.yml
+      service: microservice-db-config
+
+  loansdb:
+    image: mysql:lts
+    container_name: loansdb
+    ports:
+      - "3308:3306"
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    environment:
+      MYSQL_DATABASE: loansdb
+    extends:
+      file: common-config.yml
+      service: microservice-db-config
+
+  cardsdb:
+    image: mysql:lts
+    container_name: cardsdb
+    ports:
+      - "3309:3306"
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    environment:
+      MYSQL_DATABASE: cardsdb
+    extends:
+      file: common-config.yml
+      service: microservice-db-config
+
   configserver:
     image: ${CONFIGSERVER_IMAGE}
     container_name: configserver-ms
@@ -26,12 +68,6 @@ services:
     env_file:
       - .env
       - .env.${APP_ENV}
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8071/actuator/health/readiness || exit 1"]
-      interval: 10s     # checks every 10 seconds
-      timeout: 5s       # timeout after which the healthcheck fails
-      retries: 5        # retries when the healthcheck fails
-      start_period: 10s # wait for container startup before checking healthcheck
     extends:
       file: common-config.yml
       service: microservice-base-config
@@ -39,12 +75,11 @@ services:
   accounts:
     image: ${ACCOUNTS_IMAGE}
     container_name: accounts-ms
-#    build:
-#      context: .
-#      target: jvm
     ports:
       - "8080:8080"
     depends_on:
+      accountsdb:
+        condition: service_healthy
       configserver:
         condition: service_healthy
     env_file:
@@ -60,6 +95,8 @@ services:
     ports:
       - "9000:9000"
     depends_on:
+      cardsdb:
+        condition: service_healthy
       configserver:
         condition: service_healthy
     env_file:
@@ -75,16 +112,14 @@ services:
     ports:
       - "8090:8090"
     depends_on:
+      loansdb:
+        condition: service_healthy
       configserver:
         condition: service_healthy
     environment:
-      # BPL_JVM_THREAD_COUNT Tells Paketo memory calculator the expected thread count
-      - BPL_JVM_THREAD_COUNT=50
-      # XX:ActiveProcessorCount Aligns JVM CPU detection with the container's CPU limit
-      # Xss256k Reduces per-thread stack size from default 1MB to 256KB
-      - JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xss256k
-#      - SPRING_PROFILES_ACTIVE=default
-#      - SPRING_APPLICATION_NAME=accounts # test if it works w/o this property
+      - BPL_JVM_THREAD_COUNT=50 # Tells Paketo Buildpacks memory calculator the expected thread count
+      - JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xss256k   # XX:ActiveProcessorCount Aligns JVM CPU detection with the container's CPU limit
+                                                                # Xss256k Reduces per-thread stack size from default 1MB to 256KB
     env_file:
       - .env
       - .env.${APP_ENV}

@@ -3,9 +3,30 @@ services:
     networks:
       - microservices-network
 
+  microservice-db-config:
+    extends:
+      service: network-deploy-service
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
+      timeout: 10s
+      retries: 10
+      interval: 10s
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+
   microservice-base-config:
     extends:
       service: network-deploy-service
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8071/actuator/health/readiness || exit 1" ]
+      interval: 10s     # checks every 10 seconds
+      timeout: 5s       # timeout after which the healthcheck fails
+      retries: 5        # retries when the healthcheck fails
+      start_period: 10s # wait for container startup before checking healthcheck
     deploy:
       resources:
         limits:
