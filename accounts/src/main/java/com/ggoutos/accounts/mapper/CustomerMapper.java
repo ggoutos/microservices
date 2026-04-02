@@ -1,7 +1,8 @@
 package com.ggoutos.accounts.mapper;
 
-import com.ggoutos.accounts.dto.CustomerDto;
 import com.ggoutos.accounts.entity.Customer;
+import com.ggoutos.utils.dto.CustomerDetailsDto;
+import com.ggoutos.utils.dto.CustomerDto;
 
 public class CustomerMapper {
 
@@ -10,6 +11,13 @@ public class CustomerMapper {
         customerDto.setEmail(customer.getEmail());
         customerDto.setMobileNumber(customer.getMobileNumber());
         return customerDto;
+    }
+
+    public static CustomerDetailsDto mapToCustomerDetailsDto(Customer customer, CustomerDetailsDto customerDetailsDto) {
+        customerDetailsDto.setName(customer.getName());
+        customerDetailsDto.setEmail(customer.getEmail());
+        customerDetailsDto.setMobileNumber(customer.getMobileNumber());
+        return customerDetailsDto;
     }
 
     public static Customer mapToCustomer(CustomerDto customerDto, Customer customer) {

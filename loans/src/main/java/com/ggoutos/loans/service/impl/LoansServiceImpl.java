@@ -1,13 +1,13 @@
 package com.ggoutos.loans.service.impl;
 
 import com.ggoutos.loans.constants.LoansConstants;
-import com.ggoutos.loans.dto.LoansDto;
 import com.ggoutos.loans.entity.Loans;
 import com.ggoutos.loans.exception.LoanAlreadyExistsException;
 import com.ggoutos.loans.exception.ResourceNotFoundException;
 import com.ggoutos.loans.mapper.LoansMapper;
 import com.ggoutos.loans.repository.LoansRepository;
 import com.ggoutos.loans.service.ILoansService;
+import com.ggoutos.utils.dto.LoansDto;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 

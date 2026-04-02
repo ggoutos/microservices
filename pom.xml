@@ -13,6 +13,7 @@
     <description>Parent POM for Microservices Architecture</description>
 
     <modules>
+        <module>utils</module>
         <module>eurekaserver</module>
         <module>configserver</module>
         <module>accounts</module>

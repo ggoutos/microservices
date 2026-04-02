@@ -1,10 +1,10 @@
 package com.ggoutos.cards.controller;
 
 import com.ggoutos.cards.constants.CardsConstants;
-import com.ggoutos.cards.dto.CardsDto;
-import com.ggoutos.cards.dto.ErrorResponseDto;
-import com.ggoutos.cards.dto.ResponseDto;
 import com.ggoutos.cards.service.ICardsService;
+import com.ggoutos.utils.dto.CardsDto;
+import com.ggoutos.utils.dto.ErrorResponseDto;
+import com.ggoutos.utils.dto.ResponseDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -34,6 +34,7 @@ public class CardsController {
             @ApiResponse(responseCode = "201", description = "HTTP Status CREATED"),
             @ApiResponse(responseCode = "500", description = "HTTP Status Internal Server Error", content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
+    @PostMapping("/create")
     public ResponseEntity<ResponseDto> createCard(@Valid @RequestParam
                                                   @Pattern(regexp="(^$|[0-9]{10})",message = "Mobile number must be 10 digits")
                                                   String mobileNumber) {

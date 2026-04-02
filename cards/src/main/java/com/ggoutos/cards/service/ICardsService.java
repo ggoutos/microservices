@@ -1,6 +1,6 @@
 package com.ggoutos.cards.service;
 
-import com.ggoutos.cards.dto.CardsDto;
+import com.ggoutos.utils.dto.CardsDto;
 
 public interface ICardsService {
 

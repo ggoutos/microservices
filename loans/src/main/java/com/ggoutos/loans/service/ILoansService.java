@@ -1,6 +1,7 @@
 package com.ggoutos.loans.service;
 
-import com.ggoutos.loans.dto.LoansDto;
+
+import com.ggoutos.utils.dto.LoansDto;
 
 public interface ILoansService {
 

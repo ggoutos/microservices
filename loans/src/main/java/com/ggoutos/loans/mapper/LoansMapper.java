@@ -1,7 +1,7 @@
 package com.ggoutos.loans.mapper;
 
-import com.ggoutos.loans.dto.LoansDto;
 import com.ggoutos.loans.entity.Loans;
+import com.ggoutos.utils.dto.LoansDto;
 
 public class LoansMapper {
 

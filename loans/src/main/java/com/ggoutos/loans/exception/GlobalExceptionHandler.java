@@ -1,6 +1,6 @@
 package com.ggoutos.loans.exception;
 
-import com.ggoutos.loans.dto.ErrorResponseDto;
+import com.ggoutos.utils.dto.ErrorResponseDto;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;

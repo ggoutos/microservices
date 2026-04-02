@@ -1,8 +1,6 @@
 package com.ggoutos.accounts.service.impl;
 
 import com.ggoutos.accounts.constants.AccountsConstants;
-import com.ggoutos.accounts.dto.AccountsDto;
-import com.ggoutos.accounts.dto.CustomerDto;
 import com.ggoutos.accounts.entity.Accounts;
 import com.ggoutos.accounts.entity.Customer;
 import com.ggoutos.accounts.exception.CustomerAlreadyExistsException;
@@ -12,6 +10,8 @@ import com.ggoutos.accounts.mapper.CustomerMapper;
 import com.ggoutos.accounts.repository.AccountsRepository;
 import com.ggoutos.accounts.repository.CustomerRepository;
 import com.ggoutos.accounts.service.IAccountsService;
+import com.ggoutos.utils.dto.AccountsDto;
+import com.ggoutos.utils.dto.CustomerDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

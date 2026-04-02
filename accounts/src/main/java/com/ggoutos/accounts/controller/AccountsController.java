@@ -1,10 +1,10 @@
 package com.ggoutos.accounts.controller;
 
 import com.ggoutos.accounts.constants.AccountsConstants;
-import com.ggoutos.accounts.dto.CustomerDto;
-import com.ggoutos.accounts.dto.ErrorResponseDto;
-import com.ggoutos.accounts.dto.ResponseDto;
 import com.ggoutos.accounts.service.IAccountsService;
+import com.ggoutos.utils.dto.CustomerDto;
+import com.ggoutos.utils.dto.ErrorResponseDto;
+import com.ggoutos.utils.dto.ResponseDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
