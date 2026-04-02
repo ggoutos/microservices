@@ -474,8 +474,8 @@ docker compose restart accounts   # Restart specific service
 | `CARDS_IMAGE` | `ggoutos/cards:jib` | Cards service image |
 | `LOANS_IMAGE` | `ggoutos/loans:jib` | Loans service image |
 | `SPRING_PROFILES_ACTIVE` | `default` | Active Spring profile |
-| `SPRING_RABBITMQ_HOST` | `rabbit` | RabbitMQ hostname |
-| `SPRING_CLOUD_CONFIG_URI` | `http://configserver:8071` | ConfigServer URL |
+| `RABBITMQ_HOST` | `rabbit` | RabbitMQ hostname |
+| `CONFIG_SERVER_HOST` | `http://configserver:8071` | ConfigServer URL |
 | `CONFIG_SERVER_USER` | *(required)* | ConfigServer basic auth username |
 | `CONFIG_SERVER_PASSWORD` | *(required)* | ConfigServer basic auth password |
 | `ENCRYPTION_KEY` | *(required for encryption)* | Symmetric encryption key |

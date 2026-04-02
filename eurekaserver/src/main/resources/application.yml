@@ -7,7 +7,7 @@ logging:
 
 eureka:
   instance:
-    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    hostname: ${EUREKA_SERVER_HOST:localhost}
   client:
     register-with-eureka: false # don't register with eureka as a service as will never be called from other services directly
     fetch-registry: false # don't fetch registry from eureka as a service as will never call other services directly

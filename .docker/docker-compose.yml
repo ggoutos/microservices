@@ -57,8 +57,22 @@ services:
       file: common-config.yml
       service: microservice-db-config
 
+  eurekaserver:
+    image: ggoutos/eurekaserver:${IMAGE_TAG}
+    container_name: eurekaserver-ms
+    ports:
+      - "8070:8070"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8070/actuator/health/readiness || exit 1" ]
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
   configserver:
-    image: ${CONFIGSERVER_IMAGE}
+    image: ggoutos/configserver:${IMAGE_TAG}
     container_name: configserver-ms
     ports:
       - "8071:8071"
@@ -75,13 +89,15 @@ services:
       service: microservice-base-config
 
   accounts:
-    image: ${ACCOUNTS_IMAGE}
+    image: ggoutos/accounts:${IMAGE_TAG}
     container_name: accounts-ms
     ports:
       - "8080:8080"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health/readiness || exit 1" ]
     depends_on:
+      eurekaserver:
+        condition: service_healthy
       accountsdb:
         condition: service_healthy
       configserver:
@@ -94,13 +110,15 @@ services:
       service: microservice-base-config
 
   cards:
-    image: ${CARDS_IMAGE}
+    image: ggoutos/cards:${IMAGE_TAG}
     container_name: cards-ms
     ports:
       - "9000:9000"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9000/actuator/health/readiness || exit 1" ]
     depends_on:
+      eurekaserver:
+        condition: service_healthy
       cardsdb:
         condition: service_healthy
       configserver:
@@ -113,13 +131,15 @@ services:
       service: microservice-base-config
 
   loans:
-    image: ${LOANS_IMAGE}
+    image: ggoutos/loans:${IMAGE_TAG}
     container_name: loans-ms
     ports:
       - "8090:8090"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8090/actuator/health/readiness || exit 1" ]
     depends_on:
+      eurekaserver:
+        condition: service_healthy
       loansdb:
         condition: service_healthy
       configserver:

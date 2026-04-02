@@ -329,8 +329,8 @@ ACCOUNTS_IMAGE=ggoutos/accounts:jib
 CARDS_IMAGE=ggoutos/cards:jib
 LOANS_IMAGE=ggoutos/loans:jib
 SPRING_PROFILES_ACTIVE=default
-SPRING_RABBITMQ_HOST=rabbit
-SPRING_CLOUD_CONFIG_URI=http://configserver:8071
+RABBITMQ_HOST=rabbit
+CONFIG_SERVER_HOST=http://configserver:8071
 ```
 
 ---
