@@ -1,13 +1,13 @@
 package com.ggoutos.cards.service.impl;
 
 import com.ggoutos.cards.constants.CardsConstants;
-import com.ggoutos.cards.dto.CardsDto;
 import com.ggoutos.cards.entity.Cards;
 import com.ggoutos.cards.exception.CardAlreadyExistsException;
 import com.ggoutos.cards.exception.ResourceNotFoundException;
 import com.ggoutos.cards.mapper.CardsMapper;
 import com.ggoutos.cards.repository.CardsRepository;
 import com.ggoutos.cards.service.ICardsService;
+import com.ggoutos.utils.dto.CardsDto;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

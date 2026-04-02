@@ -1,6 +1,6 @@
-# AGENTS2.md - Enhanced AI Agent Guidance for EazyBank Microservices
+# AGENTS.md - AI Agent Guidance for EazyBank Microservices Platform
 
-> **Enhanced Documentation** - Comprehensive guide for developing, building, and deploying the EazyBank microservices platform.
+> **Comprehensive Documentation** - Complete guide for developing, building, and deploying the EazyBank microservices platform with Spring Boot 4.0.5, Spring Cloud 2025.1.1, and Java 25.
 
 ---
 
@@ -31,17 +31,21 @@
 
 | Service | Port | Purpose |
 |---------|------|---------|
+| **eurekaserver** | 8070 | Service discovery & registration |
 | **configserver** | 8071 | Centralized configuration |
 | **accounts** | 8080 | Customer accounts management |
 | **cards** | 9000 | Credit/debit cards management |
 | **loans** | 8090 | Loan management |
 | **rabbitmq** | 5672, 15672 | Message broker (config refresh) |
+| **accountsdb** | 3307 | MySQL database (accounts) |
+| **cardsdb** | 3309 | MySQL database (cards) |
+| **loansdb** | 3308 | MySQL database (loans) |
 
 ### Build Commands Cheat Sheet
 
 ```bash
 # Local Development
-mvn clean install              # Build all services
+mvn clean install              # Build all services (including utils, eurekaserver)
 mvn spring-boot:run            # Run current service
 mvn test                       # Run tests
 
@@ -50,7 +54,7 @@ mvn compile jib:dockerBuild    # Jib build → ggoutos/{service}:jib
 mvn spring-boot:build-image   # Buildpacks → ggoutos/{service}:spring
 mvn -Pnative native:compile   # Native image (requires GraalVM)
 
-# Full Stack
+# Full Stack (includes Eureka Server)
 cd .docker && docker compose up --build              # Dev
 cd .docker && docker compose --env-file .env.prod up # Prod
 ```
@@ -66,12 +70,15 @@ cd .docker && docker compose --env-file .env.prod up # Prod
 
 ### URLs
 
-| Service | Swagger UI | H2 Console | Actuator Health |
-|---------|------------|------------|-----------------|
-| accounts | http://localhost:8080/swagger-ui.html | N/A | http://localhost:8080/actuator/health |
-| cards | http://localhost:9000/swagger-ui.html | http://localhost:9000/h2-console | http://localhost:9000/actuator/health |
-| loans | http://localhost:8090/swagger-ui.html | http://localhost:8090/h2-console | http://localhost:8090/actuator/health |
-| configserver | N/A | N/A | http://localhost:8071/actuator/health |
+| Service | Swagger UI | H2 Console | Actuator Health | Eureka Registration |
+|---------|------------|------------|-----------------|---------------------|
+| accounts | http://localhost:8080/swagger-ui.html | N/A | http://localhost:8080/actuator/health | ✅ (client) |
+| cards | http://localhost:9000/swagger-ui.html | N/A | http://localhost:9000/actuator/health | ✅ (client) |
+| loans | http://localhost:8090/swagger-ui.html | N/A | http://localhost:8090/actuator/health | ✅ (client) |
+| configserver | N/A | N/A | http://localhost:8071/actuator/health | ❌ (standalone) |
+| eurekaserver | http://localhost:8070 | N/A | http://localhost:8070/actuator/health | ✅ (self) |
+
+**Note:** All services now use MySQL databases (H2 deprecated). Feign clients enable inter-service communication from Accounts to Cards/Loans services.
 
 ---
 
@@ -80,51 +87,75 @@ cd .docker && docker compose --env-file .env.prod up # Prod
 ### System Context
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     EazyBank Microservices                       │
-│                                                                  │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐    │
-│  │   Accounts   │     │    Cards     │     │    Loans     │    │
-│  │   :8080      │     │    :9000     │     │    :8090     │    │
-│  │   (MySQL)    │     │   (MySQL)    │     │   (MySQL)    │    │
-│  └──────┬───────┘     └──────┬───────┘     └──────┬───────┘    │
-│         │                    │                    │             │
-│         └────────────────────┼────────────────────┘             │
-│                              │                                  │
-│                     ┌────────▼────────┐                         │
-│                     │  ConfigServer   │                         │
-│                     │     :8071       │                         │
-│                     │   (Git/Native)  │                         │
-│                     └────────┬────────┘                         │
-│                              │                                  │
-│                     ┌────────▼────────┐                         │
-│                     │    RabbitMQ     │                         │
-│                     │   :5672/:15672  │                         │
-│                     └─────────────────┘                         │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     EazyBank Microservices Platform                       │
+│                                                                           │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐             │
+│  │   Accounts   │     │    Cards     │     │    Loans     │             │
+│  │   :8080      │     │    :9000     │     │    :8090     │             │
+│  │   (MySQL)    │     │   (MySQL)    │     │   (MySQL)    │             │
+│  │   [Feign]    │────▶│   [Client]   │     │   [Client]   │             │
+│  └──────┬───────┘     └──────┬───────┘     └──────┬───────┘             │
+│         │                    │                    │                      │
+│         └────────────────────┼────────────────────┘                      │
+│                              │                                           │
+│                     ┌────────▼────────┐         ┌──────────────┐        │
+│                     │  ConfigServer   │         │  Eureka      │        │
+│                     │     :8071       │         │  Server      │        │
+│                     │   (Git/Native)  │         │  :8070       │        │
+│                     └────────┬────────┘         └──────────────┘        │
+│                              │                                           │
+│                     ┌────────▼────────┐                                 │
+│                     │    RabbitMQ     │                                 │
+│                     │   :5672/:15672  │                                 │
+│                     └─────────────────┘                                 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Architectural Decisions
 
 - **Microservices Pattern**: Each service independently deployable with dedicated database
+- **Service Discovery**: Eureka Server for service registration and discovery
 - **Centralized Configuration**: Spring Cloud Config Server with Git backend (prod) / Native fallback (dev)
 - **Event-Driven Config Refresh**: RabbitMQ message bus for distributed configuration updates
-- **Database-per-Service**: MySQL in production, H2 for cards/loans in development (deprecated)
+- **Database-per-Service**: MySQL for all services (separate ports: 3307, 3308, 3309)
 - **API-First Design**: OpenAPI/Swagger documentation on all business services
 - **Interface-First Services**: Service layer exposes interfaces, implementations in `impl/` subpackage
+- **Declarative REST Clients**: Feign clients for inter-service communication (Accounts → Cards/Loans)
 
 ### Cross-Service Communication
 
-Currently **none** — services are fully isolated. Mobile number is the shared identifier for logical correlation across services. When adding inter-service calls:
+**Current State**: Accounts service has Feign clients to communicate with Cards and Loans services.
 
 ```java
-// Use RestTemplate or WebClient as Spring-managed beans
+// Feign Client example
+@FeignClient(name = "cards")
+public interface CardsFeignClient {
+    @GetMapping("/api/fetch?mobileNumber={mobileNumber}")
+    CardsDto fetchCardDetails(@PathVariable("mobileNumber") String mobileNumber);
+}
+
+@FeignClient(name = "loans")
+public interface LoansFeignClient {
+    @GetMapping("/api/fetch?mobileNumber={mobileNumber}")
+    LoansDto fetchLoanDetails(@PathVariable("mobileNumber") String mobileNumber);
+}
+```
+
+**Usage in Service Layer**:
+```java
 @RequiredArgsConstructor
 @Service
-public class AccountServiceImpl implements IAccountsService {
-    private final RestTemplate restTemplate;
-    // or
-    private final WebClient webClient;
+public class AccountsServiceImpl implements IAccountsService {
+    private final CardsFeignClient cardsFeignClient;
+    private final LoansFeignClient loansFeignClient;
+    
+    // Use Feign clients for inter-service calls
+    public CustomerDto getCompleteCustomerData(String mobileNumber) {
+        CardsDto cards = cardsFeignClient.fetchCardDetails(mobileNumber);
+        LoansDto loans = loansFeignClient.fetchLoanDetails(mobileNumber);
+        // ... aggregate data
+    }
 }
 ```
 
@@ -140,6 +171,8 @@ public class AccountServiceImpl implements IAccountsService {
 | **Maven** | 3.9+ | Build automation (multi-module project) |
 | **Spring Boot** | 4.0.5 | Application framework |
 | **Spring Cloud** | 2025.1.1 | Microservices patterns (Config, Bus) |
+| **Spring Data JPA** | Included | Data persistence with Hibernate |
+| **Flyway** | Included | Database migration tool |
 
 ### Dependencies (Managed in Parent POM)
 
@@ -153,6 +186,12 @@ spring-boot-starter-data-jpa        # Data persistence with Hibernate
 <!-- Spring Cloud -->
 spring-cloud-starter-config         # Centralized configuration
 spring-cloud-starter-bus-amqp       # Config refresh via RabbitMQ
+spring-cloud-starter-netflix-eureka-client  # Service discovery
+spring-cloud-starter-openfeign      # Declarative REST clients
+
+<!-- Database Migration -->
+spring-boot-starter-flyway          # Flyway database migrations
+flyway-mysql                        # Flyway MySQL support
 
 <!-- Documentation -->
 springdoc-openapi-starter-webmvc-ui  # v3.0.2 - Swagger UI
@@ -163,7 +202,6 @@ lombok                              # Boilerplate reduction (compile-time)
 
 <!-- Databases -->
 mysql-connector-j                   # MySQL driver (runtime)
-h2                                  # In-memory DB for dev (cards, loans - deprecated)
 spring-boot-starter-test            # Test frameworks (JUnit, MockMvc, etc.)
 
 <!-- Docker Plugins -->
@@ -175,8 +213,11 @@ native-maven-plugin                 # GraalVM native compilation
 ### Why These Technologies
 
 - **Spring Boot 4.0.5**: Latest stable with Jakarta EE 10 support, improved performance
-- **Spring Cloud 2025.1.1**: Compatible with Boot 4.0.5, provides Config Server and Bus patterns
+- **Spring Cloud 2025.1.1**: Compatible with Boot 4.0.5, provides Config Server, Bus, Eureka, and Feign patterns
 - **Java 25**: Latest LTS with enhanced pattern matching, records, and virtual threads support
+- **Flyway**: Schema version control and migration management for production databases
+- **Eureka**: Service discovery and registration for dynamic microservice environments
+- **Feign**: Declarative REST clients for simplified inter-service communication
 - **Jib**: Fast, reproducible Docker builds without Docker daemon dependency
 - **GraalVM Native**: Sub-second startup, reduced memory footprint for production
 
@@ -184,7 +225,48 @@ native-maven-plugin                 # GraalVM native compilation
 
 ## 4. Service Specifications
 
-### 4.1 ConfigServer
+### 4.1 Eureka Server
+
+**Purpose**: Service discovery and registration for microservices architecture.
+
+| Property | Value |
+|----------|-------|
+| Package | `com.ggoutos.eurekaserver` |
+| Port | 8070 |
+| Database | None (stateless) |
+| Docker Image | `ggoutos/eurekaserver:jib` |
+
+**Key Classes**:
+- `EurekaserverApplication.java` - Entry point with `@EnableEurekaServer`
+
+**Configuration**:
+- Self-preservation mode for production resilience
+- Health checks with readiness/liveness probes
+- Actuator endpoints: `health`, `info`
+
+---
+
+### 4.2 Utils Module
+
+**Purpose**: Shared DTOs and utility classes used across all microservices.
+
+| Property | Value |
+|----------|-------|
+| Package | `com.ggoutos.utils` |
+| Type | Shared library (JAR) |
+| Dependencies | None (pure data classes) |
+
+**Shared DTOs**:
+- `CustomerDto.java` - Customer data transfer object
+- `AccountsDto.java` - Account data transfer object
+- `CardsDto.java` - Card data transfer object
+- `LoansDto.java` - Loan data transfer object
+- `ResponseDto.java` - Standard success response
+- `ErrorResponseDto.java` - Standard error response
+
+---
+
+### 4.3 ConfigServer
 
 **Purpose**: Centralized configuration management with dynamic refresh capability.
 
@@ -205,12 +287,12 @@ native-maven-plugin                 # GraalVM native compilation
 
 **Security**:
 - Basic authentication (username/password via env vars)
-- `/actuator/health` publicly accessible
+- `/actuator/health/**` publicly accessible
 - All other endpoints protected
 
 ---
 
-### 4.2 Accounts Service
+### 4.4 Accounts Service
 
 **Purpose**: Customer accounts and relationship management.
 
@@ -221,6 +303,7 @@ native-maven-plugin                 # GraalVM native compilation
 | Database | MySQL (dev: `localhost:3306`, prod: `localhost:3307`) |
 | Docker Image | `ggoutos/accounts:jib` |
 | Custom Dockerfile | Yes (multi-stage JVM + Native) |
+| Feign Clients | Cards, Loans |
 
 **Entities**:
 - `Customer` - Customer information (PK: `customer_id`)
@@ -229,17 +312,20 @@ native-maven-plugin                 # GraalVM native compilation
 **Relationship**: One-to-one (Customer → Accounts via `customer_id`)
 
 **Key Classes**:
-- `AccountsApplication.java` - Entry point with `@EnableJpaAuditing`
-- `AccountsController.java` - REST endpoints
+- `AccountsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
+- `AccountsController.java` - REST endpoints for accounts
+- `CustomerController.java` - REST endpoints for customers
 - `IAccountsService.java` / `AccountsServiceImpl.java` - Service layer
-- `AccountsMapper.java` - Static entity/DTO mapping
-- `AccountsRepository.java` - Data access
+- `ICustomersService.java` / `CustomersServiceImpl.java` - Customer service layer
+- `AccountsMapper.java` / `CustomerMapper.java` - Static entity/DTO mapping
+- `AccountsRepository.java` / `CustomerRepository.java` - Data access
 - `AuditAwareImpl.java` - Auditor provider (`"ACCOUNTS_MS"`)
 - `AccountsConstants.java` - HTTP status codes and business constants
+- `CardsFeignClient.java` / `LoansFeignClient.java` - Inter-service clients
 
 ---
 
-### 4.3 Cards Service
+### 4.5 Cards Service
 
 **Purpose**: Credit/debit card management and limits tracking.
 
@@ -247,14 +333,14 @@ native-maven-plugin                 # GraalVM native compilation
 |----------|-------|
 | Package | `com.ggoutos.cards` |
 | Port | 9000 |
-| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3308`) |
+| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3309`) |
 | Docker Image | `ggoutos/cards:jib` |
 
 **Entities**:
 - `Cards` - Card details and limits (PK: `card_id`)
 
 **Key Classes**:
-- `CardsApplication.java` - Entry point with `@EnableJpaAuditing`
+- `CardsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
 - `CardsController.java` - REST endpoints
 - `ICardsService.java` / `CardsServiceImpl.java` - Service layer
 - `CardsMapper.java` - Static entity/DTO mapping
@@ -264,7 +350,7 @@ native-maven-plugin                 # GraalVM native compilation
 
 ---
 
-### 4.4 Loans Service
+### 4.6 Loans Service
 
 **Purpose**: Loan management and payment tracking.
 
@@ -272,14 +358,14 @@ native-maven-plugin                 # GraalVM native compilation
 |----------|-------|
 | Package | `com.ggoutos.loans` |
 | Port | 8090 |
-| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3309`) |
+| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3308`) |
 | Docker Image | `ggoutos/loans:jib` |
 
 **Entities**:
 - `Loans` - Loan details and balances (PK: `loan_id`)
 
 **Key Classes**:
-- `LoansApplication.java` - Entry point with `@EnableJpaAuditing`
+- `LoansApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
 - `LoansController.java` - REST endpoints
 - `ILoansService.java` / `LoansServiceImpl.java` - Service layer
 - `LoansMapper.java` - Static entity/DTO mapping
@@ -296,8 +382,7 @@ native-maven-plugin                 # GraalVM native compilation
 **Prerequisites**:
 - Java 25+ installed (`JAVA_HOME` set)
 - Maven 3.9+ installed
-- MySQL 8+ running (for accounts service)
-- Docker Desktop installed (for containerized testing)
+- Docker Desktop installed (for containerized MySQL, RabbitMQ, Eureka)
 
 **Step-by-Step**:
 
@@ -305,12 +390,12 @@ native-maven-plugin                 # GraalVM native compilation
 # 1. Clone and navigate to project
 cd microservices
 
-# 2. Build all services
+# 2. Build all services (including utils and eurekaserver)
 mvn clean install
 
-# 3. Start infrastructure (RabbitMQ + ConfigServer)
+# 3. Start infrastructure (RabbitMQ + ConfigServer + Eureka + Databases)
 cd .docker
-docker compose up rabbit configserver
+docker compose up rabbit configserver eurekaserver accountsdb cardsdb loansdb
 
 # 4. In separate terminals, start each service
 cd accounts && mvn spring-boot:run
@@ -344,6 +429,11 @@ spring:
 logging:
   level:
     org.springframework.cloud.config: DEBUG
+    
+# Enable Feign client logging
+logging:
+  level:
+    com.ggoutos.accounts.service.client: DEBUG
 ```
 
 **Watch Logs**:
@@ -351,6 +441,7 @@ logging:
 # Follow service logs (Docker)
 docker compose logs -f accounts
 docker compose logs -f configserver
+docker compose logs -f eurekaserver
 ```
 
 ### 5.3 Code Style Guidelines
@@ -359,10 +450,11 @@ docker compose logs -f configserver
 - Packages: `com.ggoutos.{service}` (lowercase)
 - Interfaces: `I{Service}Service` (capital I prefix)
 - Implementations: `{Service}ServiceImpl` in `impl/` subpackage
-- DTOs: `{Entity}Dto` suffix
+- DTOs: `{Entity}Dto` suffix (in utils module)
 - Mappers: `{Entity}Mapper` with static methods
 - Constants: `{Service}Constants` with private constructor
 - Exceptions: `{Resource}NotFoundException`, `{Entity}AlreadyExistsException`
+- Feign Clients: `{Service}FeignClient` in `service/client/` subpackage
 
 **Lombok Usage**:
 ```java
@@ -380,7 +472,7 @@ public class CustomerDto { ... }
 
 // Entities - use @Data or explicit getters/setters
 @Entity
-@Data
+@Getter @Setter @ToString @RequiredArgsConstructor
 public class Customer extends BaseEntity { ... }
 ```
 
@@ -474,8 +566,8 @@ docker compose restart accounts   # Restart specific service
 | `CARDS_IMAGE` | `ggoutos/cards:jib` | Cards service image |
 | `LOANS_IMAGE` | `ggoutos/loans:jib` | Loans service image |
 | `SPRING_PROFILES_ACTIVE` | `default` | Active Spring profile |
-| `SPRING_RABBITMQ_HOST` | `rabbit` | RabbitMQ hostname |
-| `SPRING_CLOUD_CONFIG_URI` | `http://configserver:8071` | ConfigServer URL |
+| `RABBITMQ_HOST` | `rabbit` | RabbitMQ hostname |
+| `CONFIG_SERVER_HOST` | `http://configserver:8071` | ConfigServer URL |
 | `CONFIG_SERVER_USER` | *(required)* | ConfigServer basic auth username |
 | `CONFIG_SERVER_PASSWORD` | *(required)* | ConfigServer basic auth password |
 | `ENCRYPTION_KEY` | *(required for encryption)* | Symmetric encryption key |

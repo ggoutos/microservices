@@ -1,7 +1,7 @@
 package com.ggoutos.accounts.mapper;
 
-import com.ggoutos.accounts.dto.AccountsDto;
 import com.ggoutos.accounts.entity.Accounts;
+import com.ggoutos.utils.dto.AccountsDto;
 
 public class AccountsMapper {
 

@@ -1,4 +1,4 @@
-package com.ggoutos.cards.dto;
+package com.ggoutos.utils.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;

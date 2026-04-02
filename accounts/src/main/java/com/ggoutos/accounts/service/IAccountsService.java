@@ -1,6 +1,6 @@
 package com.ggoutos.accounts.service;
 
-import com.ggoutos.accounts.dto.CustomerDto;
+import com.ggoutos.utils.dto.CustomerDto;
 
 public interface IAccountsService {
 

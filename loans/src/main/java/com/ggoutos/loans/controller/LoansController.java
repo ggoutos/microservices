@@ -1,10 +1,10 @@
 package com.ggoutos.loans.controller;
 
 import com.ggoutos.loans.constants.LoansConstants;
-import com.ggoutos.loans.dto.ErrorResponseDto;
-import com.ggoutos.loans.dto.LoansDto;
-import com.ggoutos.loans.dto.ResponseDto;
 import com.ggoutos.loans.service.ILoansService;
+import com.ggoutos.utils.dto.ErrorResponseDto;
+import com.ggoutos.utils.dto.LoansDto;
+import com.ggoutos.utils.dto.ResponseDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;

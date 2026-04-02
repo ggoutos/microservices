@@ -1,6 +1,6 @@
 package com.ggoutos.accounts.exception;
 
-import com.ggoutos.accounts.dto.ErrorResponseDto;
+import com.ggoutos.utils.dto.ErrorResponseDto;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;

@@ -1,7 +1,7 @@
 package com.ggoutos.cards.mapper;
 
-import com.ggoutos.cards.dto.CardsDto;
 import com.ggoutos.cards.entity.Cards;
+import com.ggoutos.utils.dto.CardsDto;
 
 public class CardsMapper {
 

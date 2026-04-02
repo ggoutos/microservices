@@ -1,13 +1,13 @@
-package com.eazybytes.loans;
+package com.ggoutos.eurekaserver;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class LoansApplicationTests {
+class EurekaserverApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
+    @Test
+    void contextLoads() {
+    }
 
 }
