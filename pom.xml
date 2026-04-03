@@ -7,7 +7,7 @@
 
     <groupId>com.ggoutos</groupId>
     <artifactId>microservices</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
     <name>microservices</name>
     <description>Parent POM for Microservices Architecture</description>
@@ -25,6 +25,7 @@
         <java.version>25</java.version>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
+        <revision>0.0.1-SNAPSHOT</revision>
         <spring-boot.version>4.0.5</spring-boot.version>
         <spring-cloud.version>2025.1.1</spring-cloud.version>
         <springdoc-openapi.version>3.0.2</springdoc-openapi.version>
