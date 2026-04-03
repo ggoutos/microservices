@@ -1,0 +1,57 @@
+server:
+  port: 8072
+
+logging:
+  level:
+    org.springframework: warn
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, refresh, busrefresh, gateway, shutdown  # Don't expose 'env' or 'configprops'
+  health:
+    readiness-state:
+      enabled: true
+    liveness-state:
+      enabled: true
+  endpoint:
+    health:
+      probes:
+        enabled: true
+    shutdown:
+      access: unrestricted
+    gateway:
+      access: unrestricted
+  info:
+    env:
+      enabled: true
+
+spring:
+  application:
+    name: gatewayserver
+  cloud:
+    gateway:
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: false # Disable default discovery locator and use only RouteLocator
+              lowerCaseServiceId: true
+
+eureka:
+  instance:
+    prefer-ip-address: true
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://${EUREKA_SERVER_HOST:localhost}:8070/eureka/
+
+info:
+  app:
+    name: gatewayserver
+    description: Eazybank Api Gateway server
+    version: 1.0.0
+
+

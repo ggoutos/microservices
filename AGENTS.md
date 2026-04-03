@@ -33,13 +33,14 @@
 |---------|------|---------|
 | **eurekaserver** | 8070 | Service discovery & registration |
 | **configserver** | 8071 | Centralized configuration |
+| **gatewayserver** | 8072 | API Gateway (reverse proxy) |
 | **accounts** | 8080 | Customer accounts management |
-| **cards** | 9000 | Credit/debit cards management |
 | **loans** | 8090 | Loan management |
+| **cards** | 9000 | Credit/debit cards management |
 | **rabbitmq** | 5672, 15672 | Message broker (config refresh) |
 | **accountsdb** | 3307 | MySQL database (accounts) |
-| **cardsdb** | 3309 | MySQL database (cards) |
 | **loansdb** | 3308 | MySQL database (loans) |
+| **cardsdb** | 3309 | MySQL database (cards) |
 
 ### Build Commands Cheat Sheet
 
@@ -68,17 +69,31 @@ cd .docker && docker compose --env-file .env.prod up # Prod
 | PUT | `/api/update` | Update resource (body) |
 | DELETE | `/api/delete?mobileNumber={}` | Delete by mobile number |
 
+### Gateway Routing Pattern
+
+All external traffic goes through the gateway at port 8072:
+
+```
+Incoming:  /goutos/bank/{service}/**
+           ↓  Path rewrite strips prefix
+           ↓  Forward to lb://{SERVICE} (via Eureka)
+Upstream:  /**
+```
+
+Example: `http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234567890` → `accounts:8080/api/fetch?mobileNumber=1234567890`
+
 ### URLs
 
-| Service | Swagger UI | H2 Console | Actuator Health | Eureka Registration |
-|---------|------------|------------|-----------------|---------------------|
-| accounts | http://localhost:8080/swagger-ui.html | N/A | http://localhost:8080/actuator/health | ✅ (client) |
-| cards | http://localhost:9000/swagger-ui.html | N/A | http://localhost:9000/actuator/health | ✅ (client) |
-| loans | http://localhost:8090/swagger-ui.html | N/A | http://localhost:8090/actuator/health | ✅ (client) |
-| configserver | N/A | N/A | http://localhost:8071/actuator/health | ❌ (standalone) |
-| eurekaserver | http://localhost:8070 | N/A | http://localhost:8070/actuator/health | ✅ (self) |
+| Service | Swagger UI | Actuator Health | Eureka Registration |
+|---------|------------|-----------------|---------------------|
+| accounts | http://localhost:8080/swagger-ui.html | http://localhost:8080/actuator/health | ✅ (client) |
+| cards | http://localhost:9000/swagger-ui.html | http://localhost:9000/actuator/health | ✅ (client) |
+| loans | http://localhost:8090/swagger-ui.html | http://localhost:8090/actuator/health | ✅ (client) |
+| gatewayserver | N/A | http://localhost:8072/actuator/health | ✅ (client) |
+| configserver | N/A | http://localhost:8071/actuator/health | ❌ (standalone) |
+| eurekaserver | http://localhost:8070 | http://localhost:8070/actuator/health | ✅ (self) |
 
-**Note:** All services now use MySQL databases (H2 deprecated). Feign clients enable inter-service communication from Accounts to Cards/Loans services.
+**Note:** All services use MySQL databases (H2 fully deprecated). Flyway manages schema migrations. Feign clients enable inter-service communication from Accounts to Cards/Loans services. The gateway server adds distributed tracing via `eazybank-correlation-id` header.
 
 ---
 
@@ -90,38 +105,49 @@ cd .docker && docker compose --env-file .env.prod up # Prod
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                     EazyBank Microservices Platform                       │
 │                                                                           │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐             │
-│  │   Accounts   │     │    Cards     │     │    Loans     │             │
-│  │   :8080      │     │    :9000     │     │    :8090     │             │
-│  │   (MySQL)    │     │   (MySQL)    │     │   (MySQL)    │             │
-│  │   [Feign]    │────▶│   [Client]   │     │   [Client]   │             │
-│  └──────┬───────┘     └──────┬───────┘     └──────┬───────┘             │
-│         │                    │                    │                      │
-│         └────────────────────┼────────────────────┘                      │
-│                              │                                           │
-│                     ┌────────▼────────┐         ┌──────────────┐        │
-│                     │  ConfigServer   │         │  Eureka      │        │
-│                     │     :8071       │         │  Server      │        │
-│                     │   (Git/Native)  │         │  :8070       │        │
-│                     └────────┬────────┘         └──────────────┘        │
-│                              │                                           │
-│                     ┌────────▼────────┐                                 │
-│                     │    RabbitMQ     │                                 │
-│                     │   :5672/:15672  │                                 │
-│                     └─────────────────┘                                 │
+│                        ┌─────────────────┐                               │
+│                        │  GatewayServer  │                               │
+│                        │     :8072       │                               │
+│                        │  (WebFlux/Reactive)                            │
+│                        │  [Trace Filters]                               │
+│                        └────────┬────────┘                               │
+│                                 │                                         │
+│         ┌───────────────────────┼───────────────────────┐               │
+│         │                       │                       │               │
+│  ┌──────▼───────┐     ┌────────▼───────┐     ┌────────▼───────┐       │
+│  │   Accounts   │     │    Loans       │     │    Cards       │       │
+│  │   :8080      │     │    :8090       │     │    :9000       │       │
+│  │   (MySQL)    │     │   (MySQL)      │     │   (MySQL)      │       │
+│  │   [Feign]    │────▶│   [Client]     │     │   [Client]     │       │
+│  └──────┬───────┘     └────────┬───────┘     └────────┬───────┘       │
+│         │                      │                      │                │
+│         └──────────────────────┼──────────────────────┘                │
+│                                │                                        │
+│                     ┌──────────▼──────────┐     ┌──────────────┐       │
+│                     │  ConfigServer       │     │  Eureka      │       │
+│                     │     :8071           │     │  Server      │       │
+│                     │   (Git Backend)     │     │  :8070       │       │
+│                     └──────────┬──────────┘     └──────────────┘       │
+│                                │                                        │
+│                     ┌──────────▼──────────┐                             │
+│                     │    RabbitMQ         │                             │
+│                     │   :5672/:15672      │                             │
+│                     └─────────────────────┘                             │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Architectural Decisions
 
 - **Microservices Pattern**: Each service independently deployable with dedicated database
+- **API Gateway**: Spring Cloud Gateway (WebFlux-based) as single entry point with distributed tracing
 - **Service Discovery**: Eureka Server for service registration and discovery
 - **Centralized Configuration**: Spring Cloud Config Server with Git backend (prod) / Native fallback (dev)
 - **Event-Driven Config Refresh**: RabbitMQ message bus for distributed configuration updates
-- **Database-per-Service**: MySQL for all services (separate ports: 3307, 3308, 3309)
+- **Database-per-Service**: MySQL for all services with Flyway schema migrations (separate ports: 3307, 3308, 3309)
 - **API-First Design**: OpenAPI/Swagger documentation on all business services
 - **Interface-First Services**: Service layer exposes interfaces, implementations in `impl/` subpackage
 - **Declarative REST Clients**: Feign clients for inter-service communication (Accounts → Cards/Loans)
+- **Distributed Tracing**: Gateway generates `eazybank-correlation-id` header, propagated to all downstream services
 
 ### Cross-Service Communication
 
@@ -131,14 +157,18 @@ cd .docker && docker compose --env-file .env.prod up # Prod
 // Feign Client example
 @FeignClient(name = "cards")
 public interface CardsFeignClient {
-    @GetMapping("/api/fetch?mobileNumber={mobileNumber}")
-    CardsDto fetchCardDetails(@PathVariable("mobileNumber") String mobileNumber);
+    @GetMapping(value = "/api/fetch", consumes = "application/json")
+    CardsDto fetchCardDetails(
+        @RequestHeader(name = "eazybank-correlation-id", required = true) String correlationId,
+        @RequestParam String mobileNumber);
 }
 
 @FeignClient(name = "loans")
 public interface LoansFeignClient {
-    @GetMapping("/api/fetch?mobileNumber={mobileNumber}")
-    LoansDto fetchLoanDetails(@PathVariable("mobileNumber") String mobileNumber);
+    @GetMapping(value = "/api/fetch", consumes = "application/json")
+    LoansDto fetchLoanDetails(
+        @RequestHeader(name = "eazybank-correlation-id", required = true) String correlationId,
+        @RequestParam String mobileNumber);
 }
 ```
 
@@ -146,18 +176,26 @@ public interface LoansFeignClient {
 ```java
 @RequiredArgsConstructor
 @Service
-public class AccountsServiceImpl implements IAccountsService {
+public class CustomersServiceImpl implements ICustomersService {
     private final CardsFeignClient cardsFeignClient;
     private final LoansFeignClient loansFeignClient;
     
-    // Use Feign clients for inter-service calls
-    public CustomerDto getCompleteCustomerData(String mobileNumber) {
-        CardsDto cards = cardsFeignClient.fetchCardDetails(mobileNumber);
-        LoansDto loans = loansFeignClient.fetchLoanDetails(mobileNumber);
+    // Use Feign clients for inter-service calls with correlation ID
+    public CustomerDetailsDto fetchCustomerDetails(String mobileNumber, String correlationId) {
+        CardsDto cards = cardsFeignClient.fetchCardDetails(correlationId, mobileNumber);
+        LoansDto loans = loansFeignClient.fetchLoanDetails(correlationId, mobileNumber);
         // ... aggregate data
     }
 }
 ```
+
+### Gateway Tracing Pattern
+
+The gateway server implements a correlation ID tracing pattern:
+
+1. **RequestTraceFilter** (Pre-filter, Order 1): Generates UUID if `eazybank-correlation-id` header is missing
+2. **ResponseTraceFilter** (Post-filter): Adds correlation ID to response headers
+3. **Downstream Propagation**: Cards and Loans services require this header on `/api/fetch` endpoints
 
 ---
 
@@ -167,18 +205,20 @@ public class AccountsServiceImpl implements IAccountsService {
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **Java** | 25 | Runtime & compilation (module system enabled) |
+| **Java** | 25 | Runtime & compilation |
 | **Maven** | 3.9+ | Build automation (multi-module project) |
 | **Spring Boot** | 4.0.5 | Application framework |
-| **Spring Cloud** | 2025.1.1 | Microservices patterns (Config, Bus) |
+| **Spring Cloud** | 2025.1.1 | Microservices patterns (Config, Bus, Gateway) |
 | **Spring Data JPA** | Included | Data persistence with Hibernate |
 | **Flyway** | Included | Database migration tool |
+| **Spring WebFlux** | Included | Reactive gateway (gatewayserver only) |
 
 ### Dependencies (Managed in Parent POM)
 
 ```xml
 <!-- Core Starters -->
-spring-boot-starter-webmvc          # REST APIs
+spring-boot-starter-webmvc          # REST APIs (business services)
+spring-boot-starter-webflux         # Reactive APIs (gatewayserver)
 spring-boot-starter-validation      # Jakarta Bean Validation
 spring-boot-starter-actuator        # Health checks, metrics, monitoring
 spring-boot-starter-data-jpa        # Data persistence with Hibernate
@@ -188,6 +228,7 @@ spring-cloud-starter-config         # Centralized configuration
 spring-cloud-starter-bus-amqp       # Config refresh via RabbitMQ
 spring-cloud-starter-netflix-eureka-client  # Service discovery
 spring-cloud-starter-openfeign      # Declarative REST clients
+spring-cloud-starter-gateway-server-webflux # API Gateway (gatewayserver)
 
 <!-- Database Migration -->
 spring-boot-starter-flyway          # Flyway database migrations
@@ -213,11 +254,12 @@ native-maven-plugin                 # GraalVM native compilation
 ### Why These Technologies
 
 - **Spring Boot 4.0.5**: Latest stable with Jakarta EE 10 support, improved performance
-- **Spring Cloud 2025.1.1**: Compatible with Boot 4.0.5, provides Config Server, Bus, Eureka, and Feign patterns
+- **Spring Cloud 2025.1.1**: Compatible with Boot 4.0.5, provides Config Server, Bus, Eureka, Feign, and Gateway patterns
 - **Java 25**: Latest LTS with enhanced pattern matching, records, and virtual threads support
 - **Flyway**: Schema version control and migration management for production databases
 - **Eureka**: Service discovery and registration for dynamic microservice environments
 - **Feign**: Declarative REST clients for simplified inter-service communication
+- **Spring Cloud Gateway**: Reactive API gateway with custom filter support
 - **Jib**: Fast, reproducible Docker builds without Docker daemon dependency
 - **GraalVM Native**: Sub-second startup, reduced memory footprint for production
 
@@ -240,9 +282,13 @@ native-maven-plugin                 # GraalVM native compilation
 - `EurekaserverApplication.java` - Entry point with `@EnableEurekaServer`
 
 **Configuration**:
-- Self-preservation mode for production resilience
+- Standalone mode (`register-with-eureka: false`, `fetch-registry: false`)
 - Health checks with readiness/liveness probes
-- Actuator endpoints: `health`, `info`
+- Actuator endpoints: `health`, `info`, `refresh`, `busrefresh`, `shutdown`
+- No ConfigServer client dependency (self-configured)
+- No security/authentication (internal service)
+
+**Note**: The `main` method is package-private (`static void main`), which is non-standard but functional.
 
 ---
 
@@ -252,17 +298,20 @@ native-maven-plugin                 # GraalVM native compilation
 
 | Property | Value |
 |----------|-------|
-| Package | `com.ggoutos.utils` |
+| Package | `com.ggoutos.utils.dto` |
 | Type | Shared library (JAR) |
-| Dependencies | None (pure data classes) |
+| Dependencies | `springdoc-openapi-starter-webmvc-ui` (v3.0.2) |
 
-**Shared DTOs**:
-- `CustomerDto.java` - Customer data transfer object
-- `AccountsDto.java` - Account data transfer object
-- `CardsDto.java` - Card data transfer object
-- `LoansDto.java` - Loan data transfer object
-- `ResponseDto.java` - Standard success response
-- `ErrorResponseDto.java` - Standard error response
+**Shared DTOs** (all use Lombok `@Data` and OpenAPI `@Schema`):
+- `CustomerDto.java` - Customer data (name, email, mobileNumber, accountsDto)
+- `CustomerDetailsDto.java` - Aggregated customer view (accounts, cards, loans)
+- `AccountsDto.java` - Account data (accountNumber, accountType, branchAddress)
+- `CardsDto.java` - Card data (mobileNumber, cardNumber, cardType, limits)
+- `LoansDto.java` - Loan data (mobileNumber, loanNumber, loanType, balances)
+- `ResponseDto.java` - Standard success response (statusCode, statusMsg)
+- `ErrorResponseDto.java` - Standard error response (apiPath, errorCode, errorMessage, errorTime)
+
+**Note**: This is a plain JAR library, not a Spring Boot application. Spring Boot repackaging is disabled so other modules can import it as a regular dependency.
 
 ---
 
@@ -276,23 +325,69 @@ native-maven-plugin                 # GraalVM native compilation
 | Port | 8071 |
 | Database | None (stateless) |
 | Docker Image | `ggoutos/configserver:jib` |
+| Active Profile | `git` (default), `native` (dev fallback) |
 
 **Key Classes**:
 - `ConfigserverApplication.java` - Entry point with `@EnableConfigServer`
-- `SecurityConfig.java` - Basic auth configuration
+- `SecurityConfig.java` - Basic auth configuration (CSRF disabled, health endpoints public)
 
 **Configuration Backends**:
-- **Git (production)**: Remote Git repository with `/.config` search path
-- **Native (dev fallback)**: `classpath:/shared`, `classpath:/config`
+- **Git (production/default)**: Remote Git repository (`${GIT_URI}`), branch `master`, search path `/.config`, `clone-on-start: true`, `force-pull: true`
+- **Native (dev fallback)**: `classpath:/shared`, `classpath:/config` (directories do not exist - non-functional)
 
 **Security**:
-- Basic authentication (username/password via env vars)
+- Basic authentication (username/password via env vars: `CONFIG_SERVER_USER`, `CONFIG_SERVER_PASSWORD`)
 - `/actuator/health/**` publicly accessible
 - All other endpoints protected
+- Symmetric encryption enabled (`ENCRYPTION_KEY` env var)
+
+**Note**: The `main` method is package-private. ConfigServer only serves datasource credentials (all other config is local to each service).
 
 ---
 
-### 4.4 Accounts Service
+### 4.4 GatewayServer
+
+**Purpose**: API Gateway - single entry point for all client traffic with distributed tracing.
+
+| Property | Value |
+|----------|-------|
+| Package | `com.ggoutos.gatewayserver` |
+| Port | 8072 |
+| Stack | WebFlux (Reactive) - **only service using reactive stack** |
+| Database | None (stateless) |
+| Docker Image | `ggoutos/gatewayserver:jib` |
+
+**Key Classes**:
+- `GatewayserverApplication.java` - Entry point with `RouteLocator` bean for route definitions
+- `filters/FilterUtility.java` - Correlation ID header utilities (`eazybank-correlation-id`)
+- `filters/RequestTraceFilter.java` - Pre-filter (Order 1): generates/passes correlation ID
+- `filters/ResponseTraceFilter.java` - Post-filter: adds correlation ID to response headers
+
+**Route Configuration**:
+```java
+public static final String DNS_PREFIX = "goutos/bank";
+
+private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
+    return p -> p
+        .path("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/**")
+        .filters(f -> f.rewritePath("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/(?<segment>.*)", "/${segment}")
+            .addResponseHeader("X-Respose-Time", Instant.now().toString())) // Note: typo in header name
+        .uri("lb://" + service.toUpperCase());
+}
+```
+
+**Registered Routes**:
+- `/goutos/bank/accounts/**` → `lb://ACCOUNTS`
+- `/goutos/bank/loans/**` → `lb://LOANS`
+- `/goutos/bank/cards/**` → `lb://CARDS`
+
+**Configuration**: No ConfigServer client dependency (fully self-contained in local `application.yml`). Discovery locator is disabled (`enabled: false`).
+
+**Note**: The `main` method is package-private. No security/authentication layer currently.
+
+---
+
+### 4.5 Accounts Service
 
 **Purpose**: Customer accounts and relationship management.
 
@@ -300,32 +395,38 @@ native-maven-plugin                 # GraalVM native compilation
 |----------|-------|
 | Package | `com.ggoutos.accounts` |
 | Port | 8080 |
-| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3307`) |
+| Database | MySQL (dev: `localhost:3306`, prod: `accountsdb:3306`) |
 | Docker Image | `ggoutos/accounts:jib` |
-| Custom Dockerfile | Yes (multi-stage JVM + Native) |
+| Custom Dockerfile | Yes (multi-stage: JVM via jlink + GraalVM Native) |
 | Feign Clients | Cards, Loans |
+| Schema Management | Flyway (`V1__init_schema.sql`) |
 
 **Entities**:
-- `Customer` - Customer information (PK: `customer_id`)
-- `Accounts` - Account details (PK: `account_number`, FK: `customer_id`)
+- `Customer` - Customer information (PK: `customer_id`, fields: name, email, mobileNumber)
+- `Accounts` - Account details (PK: `account_number`, FK: `customer_id` logical, accountType, branchAddress)
 
-**Relationship**: One-to-one (Customer → Accounts via `customer_id`)
+**Relationship**: One-to-one (Customer → Accounts via `customer_id` column, no JPA `@ManyToOne`)
 
 **Key Classes**:
 - `AccountsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
-- `AccountsController.java` - REST endpoints for accounts
-- `CustomerController.java` - REST endpoints for customers
-- `IAccountsService.java` / `AccountsServiceImpl.java` - Service layer
-- `ICustomersService.java` / `CustomersServiceImpl.java` - Customer service layer
-- `AccountsMapper.java` / `CustomerMapper.java` - Static entity/DTO mapping
+- `AccountsController.java` - REST endpoints for accounts CRUD
+- `CustomerController.java` - REST endpoint for aggregated customer details (requires `eazybank-correlation-id` header)
+- `IAccountsService.java` / `AccountsServiceImpl.java` - Account CRUD service layer
+- `ICustomersService.java` / `CustomersServiceImpl.java` - Customer details aggregation with Feign calls
+- `AccountsMapper.java` / `CustomerMapper.java` - Static entity/DTO mapping (target-mutation pattern)
 - `AccountsRepository.java` / `CustomerRepository.java` - Data access
 - `AuditAwareImpl.java` - Auditor provider (`"ACCOUNTS_MS"`)
 - `AccountsConstants.java` - HTTP status codes and business constants
-- `CardsFeignClient.java` / `LoansFeignClient.java` - Inter-service clients
+- `CardsFeignClient.java` / `LoansFeignClient.java` - Inter-service clients (pass correlation ID)
+
+**Notable Implementation Details**:
+- Account number generation: `1000000000L + random.nextInt(900000000)` (uses `java.util.Random`, not `SecureRandom`)
+- Default account type: `"Savings"`, branch: `"123 Main Street, New York"` (hardcoded constants)
+- `CustomerController.fetchCustomerDetails()` is the cross-service aggregation endpoint
 
 ---
 
-### 4.5 Cards Service
+### 4.6 Cards Service
 
 **Purpose**: Credit/debit card management and limits tracking.
 
@@ -333,24 +434,31 @@ native-maven-plugin                 # GraalVM native compilation
 |----------|-------|
 | Package | `com.ggoutos.cards` |
 | Port | 9000 |
-| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3309`) |
+| Database | MySQL (dev: `localhost:3306`, prod: `cardsdb:3306`) |
 | Docker Image | `ggoutos/cards:jib` |
+| Schema Management | Flyway (`V1__init_schema.sql`) |
 
 **Entities**:
-- `Cards` - Card details and limits (PK: `card_id`)
+- `Cards` - Card details and limits (PK: `card_id`, fields: mobileNumber, cardNumber, cardType, totalLimit, amountUsed, availableAmount)
 
 **Key Classes**:
-- `CardsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
-- `CardsController.java` - REST endpoints
-- `ICardsService.java` / `CardsServiceImpl.java` - Service layer
-- `CardsMapper.java` - Static entity/DTO mapping
-- `CardsRepository.java` - Data access
+- `CardsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients` (no Feign clients defined)
+- `CardsController.java` - REST endpoints (uses `@Slf4j` for logging)
+- `ICardsService.java` / `CardsServiceImpl.java` - Service layer (uses `@Slf4j`)
+- `CardsMapper.java` - Static entity/DTO mapping (target-mutation pattern)
+- `CardsRepository.java` - Data access (findByMobileNumber, findByCardNumber)
 - `AuditAwareImpl.java` - Auditor provider (`"CARDS_MS"`)
 - `CardsConstants.java` - HTTP status codes and business constants
 
+**Notable Implementation Details**:
+- Card number generation: `1000000000000000L + random.nextLong(9000000000000000L)` (16-digit, uses `java.util.Random`)
+- Default card type: `"Credit Card"`, limit: `100,000`
+- `/api/fetch` endpoint **requires** `eazybank-correlation-id` header (unique among business services)
+- `CREDIT` and `DEBIT` constants defined but unused
+
 ---
 
-### 4.6 Loans Service
+### 4.7 Loans Service
 
 **Purpose**: Loan management and payment tracking.
 
@@ -358,20 +466,27 @@ native-maven-plugin                 # GraalVM native compilation
 |----------|-------|
 | Package | `com.ggoutos.loans` |
 | Port | 8090 |
-| Database | MySQL (dev: `localhost:3306`, prod: `localhost:3308`) |
+| Database | MySQL (dev: `localhost:3306`, prod: `loansdb:3306`) |
 | Docker Image | `ggoutos/loans:jib` |
+| Schema Management | Flyway (`V1__init_schema.sql`) |
 
 **Entities**:
-- `Loans` - Loan details and balances (PK: `loan_id`)
+- `Loans` - Loan details and balances (PK: `loan_id`, `@Table(name = "loans")`, fields: mobileNumber, loanNumber, loanType, totalLoan, amountPaid, outstandingAmount)
 
 **Key Classes**:
-- `LoansApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
-- `LoansController.java` - REST endpoints
+- `LoansApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients` (no Feign clients defined)
+- `LoansController.java` - REST endpoints (uses `@Slf4j` for logging)
 - `ILoansService.java` / `LoansServiceImpl.java` - Service layer
-- `LoansMapper.java` - Static entity/DTO mapping
-- `LoansRepository.java` - Data access
+- `LoansMapper.java` - Static entity/DTO mapping (target-mutation pattern)
+- `LoansRepository.java` - Data access (findByMobileNumber, findByLoanNumber)
 - `AuditAwareImpl.java` - Auditor provider (`"LOANS_MS"`)
 - `LoansConstants.java` - HTTP status codes and business constants
+
+**Notable Implementation Details**:
+- Loan number generation: `100000000000L + new Random().nextInt(900000000)` (12-digit, narrow range: 100000000000-100899999999)
+- Default loan type: `"Home Loan"`, limit: `100,000`
+- `/api/fetch` endpoint **requires** `eazybank-correlation-id` header
+- `updateLoan()` and `deleteLoan()` always return `true` (417 failure path in controller is unreachable)
 
 ---
 
@@ -466,14 +581,31 @@ public class AccountsServiceImpl implements IAccountsService {
     private final AccountsMapper accountsMapper;
 }
 
-// DTOs - use @Data or @Builder
+// DTOs - use @Data
 @Data
 public class CustomerDto { ... }
 
-// Entities - use @Data or explicit getters/setters
+// Entities - use @Getter @Setter @ToString @RequiredArgsConstructor
 @Entity
 @Getter @Setter @ToString @RequiredArgsConstructor
 public class Customer extends BaseEntity { ... }
+```
+
+**Mapper Pattern** (static, target-mutation):
+```java
+public class AccountsMapper {
+    static AccountsDto mapToAccountsDto(Accounts accounts, AccountsDto accountsDto) {
+        accountsDto.setAccountNumber(accounts.getAccountNumber());
+        // ... set other fields
+        return accountsDto;
+    }
+    
+    static Accounts mapToAccounts(AccountsDto accountsDto, Accounts accounts) {
+        accounts.setAccountType(accountsDto.getAccountType());
+        // ... set other fields
+        return accounts;
+    }
+}
 ```
 
 ---
@@ -494,11 +626,14 @@ mvn clean install -pl accounts
 
 # Build with dependency tree
 mvn dependency:tree
+
+# CI-friendly version override
+mvn clean install -Drevision=1.2.3
 ```
 
 ### 6.2 Docker Image Building
 
-All services support **four** build methods:
+All services support **three** build methods (utils module is a library, not an application):
 
 #### Method 1: Jib (Recommended)
 ```bash
@@ -507,7 +642,7 @@ mvn compile jib:dockerBuild
 # Creates: ggoutos/{service}:jib
 ```
 
-**Advantages**: Fast, reproducible, no Docker daemon required, layered builds
+**Advantages**: Fast, reproducible, no Docker daemon required, layered builds. Base image: `eclipse-temurin:25-jre-alpine-3.21`
 
 #### Method 2: Buildpacks (Spring Boot)
 ```bash
@@ -525,7 +660,7 @@ docker build --target jvm -t ggoutos/accounts:latest .
 docker build --target native -t ggoutos/accounts:native .
 ```
 
-**Advantages**: Full control over image layers, optimized for production
+**Advantages**: Full control over image layers, optimized for production. JVM target uses custom JRE via `jlink`.
 
 #### Method 4: Native Image (GraalVM)
 ```bash
@@ -557,20 +692,29 @@ docker compose down               # Stop all services
 docker compose restart accounts   # Restart specific service
 ```
 
+**Startup Order** (enforced by `depends_on` with `service_healthy`):
+```
+rabbit → configserver → eurekaserver → databases → business services → gatewayserver
+```
+
 ### 6.4 Environment Variables Reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONFIGSERVER_IMAGE` | `ggoutos/configserver:jib` | ConfigServer Docker image |
-| `ACCOUNTS_IMAGE` | `ggoutos/accounts:jib` | Accounts service image |
-| `CARDS_IMAGE` | `ggoutos/cards:jib` | Cards service image |
-| `LOANS_IMAGE` | `ggoutos/loans:jib` | Loans service image |
+| `IMAGE_TAG` | `jib` | Docker image tag for all services |
 | `SPRING_PROFILES_ACTIVE` | `default` | Active Spring profile |
 | `RABBITMQ_HOST` | `rabbit` | RabbitMQ hostname |
-| `CONFIG_SERVER_HOST` | `http://configserver:8071` | ConfigServer URL |
+| `CONFIG_SERVER_HOST` | `configserver` | ConfigServer hostname |
+| `EUREKA_SERVER_HOST` | `eurekaserver` | Eureka Server hostname |
 | `CONFIG_SERVER_USER` | *(required)* | ConfigServer basic auth username |
 | `CONFIG_SERVER_PASSWORD` | *(required)* | ConfigServer basic auth password |
 | `ENCRYPTION_KEY` | *(required for encryption)* | Symmetric encryption key |
+| `GIT_URI` | *(required for git profile)* | Git repository URL |
+| `GIT_USERNAME` | *(required for git profile)* | Git authentication username |
+| `GIT_TOKEN` | *(required for git profile)* | Git authentication token (PAT) |
+| `MYSQL_ROOT_PASSWORD` | *(required)* | MySQL root password |
+
+**Note**: Sensitive credentials should be set in `.env.local` (git-ignored), not committed to the repository.
 
 ---
 
@@ -590,19 +734,31 @@ docker compose restart accounts   # Restart specific service
 
 ### 7.2 Configuration Files Structure
 
-**Location**: `.config/` directory (served by ConfigServer native profile)
+**Location**: `.config/` directory (served by ConfigServer Git backend)
 
 ```
 .config/
-├── accounts.yml          # Accounts dev configuration
-├── accounts-prod.yml     # Accounts production configuration
-├── cards.yml             # Cards dev configuration
-├── cards-prod.yml        # Cards production configuration
-├── loans.yml             # Loans dev configuration
-└── loans-prod.yml        # Loans production configuration
+├── accounts.yml          # Accounts dev datasource config
+├── accounts-prod.yml     # Accounts production datasource config
+├── cards.yml             # Cards dev datasource config
+├── cards-prod.yml        # Cards production datasource config
+├── loans.yml             # Loans dev datasource config
+└── loans-prod.yml        # Loans production datasource config
 ```
 
-### 7.3 Config Refresh Mechanism
+**Important**: These files contain **only** `spring.datasource` properties (username, password, URL). All other configuration (JPA, Flyway, Eureka, RabbitMQ, actuator) lives in each service's local `application.yml`.
+
+### 7.3 Database Configuration by Profile
+
+| Service | Default Profile (dev) | Prod Profile |
+|---------|----------------------|--------------|
+| Accounts | `jdbc:mysql://localhost:3306/accountsdb` | `jdbc:mysql://accountsdb:3306/accountsdb` |
+| Cards | `jdbc:mysql://localhost:3306/cardsdb` | `jdbc:mysql://cardsdb:3306/cardsdb` |
+| Loans | `jdbc:mysql://localhost:3306/loansdb` | `jdbc:mysql://loansdb:3306/loansdb` |
+
+**The only difference between profiles is the database hostname**: `localhost` (dev, direct access) vs. Docker service name (prod, container networking).
+
+### 7.4 Config Refresh Mechanism
 
 **Manual Refresh**:
 ```bash
@@ -616,17 +772,7 @@ curl -X POST http://localhost:8080/actuator/refresh
 3. ConfigServer publishes refresh event to RabbitMQ
 4. All services receive event and refresh configuration
 
-**Enable Bus Refresh**:
-```yaml
-# In application.yml
-spring:
-  cloud:
-    bus:
-      refresh:
-        enabled: true
-```
-
-### 7.4 Encryption/Decryption
+### 7.5 Encryption/Decryption
 
 **Encrypt Property**:
 ```bash
@@ -645,11 +791,15 @@ password: '{cipher}7fb9b5e4c8a8d9f2...'
 curl http://localhost:8071/decrypt -d "{cipher}7fb9b5e4c8a8d9f2..."
 ```
 
-### 7.5 Profile Management
+### 7.6 Profile Management
 
 **Available Profiles**:
-- `default` - Development configuration (H2 for cards/loans, MySQL localhost for accounts)
-- `prod` - Production configuration (MySQL on separate ports for all services)
+- `default` - Development configuration (MySQL on localhost)
+- `prod` - Production configuration (MySQL on Docker service names)
+
+**ConfigServer Profile Selection**:
+- `git` (default/production): Remote Git repository backend
+- `native` (dev fallback): Classpath-based (non-functional - directories don't exist)
 
 **Activate Profile**:
 ```bash
@@ -680,13 +830,13 @@ SPRING_PROFILES_ACTIVE=prod
 │    + audit fields   │
 └──────────┬──────────┘
            │ 1:1
-           │
+           │ (logical FK, no @ManyToOne)
            ▼
 ┌─────────────────────┐
 │     ACCOUNTS        │
 ├─────────────────────┤
 │ PK account_number   │
-│ FK customer_id      │
+│    customer_id      │◀─── Logical FK (no DB constraint)
 │    account_type     │
 │    branch_address   │
 │    + audit fields   │
@@ -696,7 +846,7 @@ SPRING_PROFILES_ACTIVE=prod
 │      CARDS          │
 ├─────────────────────┤
 │ PK card_id          │
-│    mobile_number    │◀─── Logical join key
+│    mobile_number    │◀─── Logical join key (cross-service)
 │    card_number      │
 │    card_type        │
 │    total_limit      │
@@ -709,7 +859,7 @@ SPRING_PROFILES_ACTIVE=prod
 │      LOANS          │
 ├─────────────────────┤
 │ PK loan_id          │
-│    mobile_number    │◀─── Logical join key
+│    mobile_number    │◀─── Logical join key (cross-service)
 │    loan_number      │
 │    loan_type        │
 │    total_loan       │
@@ -746,31 +896,34 @@ public abstract class BaseEntity {
 }
 ```
 
-**Auditor Provider**:
+**Auditor Provider** (each service):
 ```java
 @Component("auditAwareImpl")
 public class AuditAwareImpl implements AuditorAware<String> {
     @Override
     public Optional<String> getCurrentAuditor() {
-        return Optional.of("{SERVICE}_MS"); // e.g., "ACCOUNTS_MS"
+        return Optional.of("{SERVICE}_MS"); // e.g., "ACCOUNTS_MS", "CARDS_MS", "LOANS_MS"
     }
 }
 ```
 
 ### 8.3 Database Migration
 
-**Current State**: Schema auto-created via JPA `ddl-auto: update`
+**Current State**: Flyway manages schema with `V1__init_schema.sql` per service. JPA `ddl-auto: none` (schema not auto-generated).
 
-**For Production Migrations**:
-1. Use Flyway or Liquibase (not currently configured)
-2. Add migration scripts to `src/main/resources/db/migration`
-3. Configure in `application.yml`:
+**Flyway Configuration** (all business services):
 ```yaml
 spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    baseline-on-migrate: true
 ```
+
+**Migration Scripts**:
+- `accounts/src/main/resources/db/migration/V1__init_schema.sql` - Creates `customer` and `accounts` tables
+- `cards/src/main/resources/db/migration/V1__init_schema.sql` - Creates `cards` table
+- `loans/src/main/resources/db/migration/V1__init_schema.sql` - Creates `loans` table
 
 ---
 
@@ -783,22 +936,34 @@ All business services follow this pattern:
 | Method | Endpoint | Request | Response | Status Codes |
 |--------|----------|---------|----------|--------------|
 | POST | `/api/create` | DTO or `mobileNumber` param | `ResponseDto` | 201 (Created), 417 (Failed) |
-| GET | `/api/fetch` | `?mobileNumber={}` | Resource DTO | 200 (OK), 404 (Not Found) |
+| GET | `/api/fetch` | `?mobileNumber={}` (+ `eazybank-correlation-id` header for cards/loans) | Resource DTO | 200 (OK), 404 (Not Found) |
 | PUT | `/api/update` | DTO | `ResponseDto` | 200 (OK), 417 (Failed) |
 | DELETE | `/api/delete` | `?mobileNumber={}` | `ResponseDto` | 200 (OK), 404 (Not Found) |
 
-### 9.2 Request/Response Examples
+### 9.2 Accounts-Specific Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/create` | Create customer + account (body: `CustomerDto`) |
+| GET | `/api/fetch` | Fetch customer + account by mobile number |
+| PUT | `/api/update` | Update customer + account details |
+| DELETE | `/api/delete` | Delete account + customer |
+| GET | `/api/fetchCustomerDetails` | **Aggregated view**: customer + account + cards + loans (requires `eazybank-correlation-id` header) |
+
+### 9.3 Request/Response Examples
 
 **Create Account**:
 ```http
-POST /api/create?mobileNumber=9939321212
+POST http://localhost:8080/api/create
 Content-Type: application/json
 
 {
   "name": "John Doe",
   "email": "john@example.com",
-  "accountType": "Savings",
-  "branchAddress": "123 Main St"
+  "mobileNumber": "9939321212",
+  "accountsDto": {
+    "accountType": "Savings"
+  }
 }
 ```
 
@@ -810,9 +975,10 @@ Content-Type: application/json
 }
 ```
 
-**Fetch Cards**:
+**Fetch Cards** (with correlation ID):
 ```http
-GET /api/fetch?mobileNumber=9939321212
+GET http://localhost:9000/api/fetch?mobileNumber=9939321212
+eazybank-correlation-id: abc-123-def
 ```
 
 **Response**:
@@ -827,25 +993,25 @@ GET /api/fetch?mobileNumber=9939321212
 }
 ```
 
-### 9.3 Validation Rules
+### 9.4 Validation Rules
 
 | Field | Validation Pattern |
 |-------|-------------------|
 | Mobile Number | `(^$|[0-9]{10})` - Exactly 10 digits |
 | Account Number | `(^$|[0-9]{10})` - Exactly 10 digits |
-| Card Number | `(^$|[0-9]{12})` - Exactly 12 digits |
+| Card Number | `(^$|[0-9]{12})` - Exactly 12 digits (**note**: actual generated card numbers are 16 digits - validation mismatch) |
 | Loan Number | `(^$|[0-9]{12})` - Exactly 12 digits |
 | Email | Valid email format |
 | Name | 5-30 characters |
 
-### 9.4 Error Response Format
+### 9.5 Error Response Format
 
 ```json
 {
   "apiPath": "/api/create",
   "errorCode": "BAD_REQUEST",
   "errorMessage": "Validation failed",
-  "errorTime": "2026-04-01T10:30:00.000"
+  "errorTime": "2026-04-03T10:30:00.000"
 }
 ```
 
@@ -865,11 +1031,11 @@ GET /api/fetch?mobileNumber=9939321212
 
 ```
 RuntimeException
-├── ResourceNotFoundException
-├── CustomerAlreadyExistsException
-├── AccountAlreadyExistsException
-├── CardAlreadyExistsException
-├── LoanAlreadyExistsException
+├── ResourceNotFoundException          (@ResponseStatus(NOT_FOUND))
+├── CustomerAlreadyExistsException     (@ResponseStatus(BAD_REQUEST))
+├── AccountAlreadyExistsException      (defined but unused)
+├── CardAlreadyExistsException         (@ResponseStatus(BAD_REQUEST))
+├── LoanAlreadyExistsException         (@ResponseStatus(BAD_REQUEST))
 └── GlobalExceptionHandler (handles all via @ControllerAdvice)
 ```
 
@@ -879,15 +1045,18 @@ RuntimeException
 @ControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     
-    // Validation errors → Map<String, String> (field → message)
+    // Validation errors → Map<String, String> (field → message), HTTP 400
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(...)
     
     // Custom exceptions → ErrorResponseDto
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponseDto> handleResourceNotFound(...)
+    public ResponseEntity<ErrorResponseDto> handleResourceNotFound(...)  // HTTP 404
     
-    // Generic exceptions → ErrorResponseDto with INTERNAL_SERVER_ERROR
+    @ExceptionHandler(CustomerAlreadyExistsException.class)
+    public ResponseEntity<ErrorResponseDto> handleCustomerAlreadyExists(...)  // HTTP 400
+    
+    // Generic exceptions → ErrorResponseDto, HTTP 500
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDto> handleGenericException(...)
 }
@@ -899,26 +1068,28 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 |--------|------|-------|
 | 200 OK | `STATUS_200` | Successful fetch/update |
 | 201 Created | `STATUS_201` | Successful creation |
-| 404 Not Found | N/A | Resource not found (handled by Spring) |
-| 417 Expectation Failed | `STATUS_417` | Business logic failures |
-| 500 Internal Server Error | N/A | Generic exceptions |
+| 400 Bad Request | N/A | Validation failures, duplicate resources |
+| 404 Not Found | N/A | Resource not found |
+| 417 Expectation Failed | `STATUS_417` | Business logic failures (update/delete) |
+| 500 Internal Server Error | N/A | Generic unhandled exceptions |
 
 ### 10.4 Adding Custom Exceptions
 
 ```java
 // 1. Create exception class
 public class ResourceNotFoundException extends RuntimeException {
-    public ResourceNotFoundException(String message) {
-        super(message);
+    public ResourceNotFoundException(String resourceName, String fieldName, String fieldValue) {
+        super(String.format("%s not found with the given input data %s : '%s'", 
+            resourceName, fieldName, fieldValue));
     }
 }
 
 // 2. Register in GlobalExceptionHandler
 @ExceptionHandler(ResourceNotFoundException.class)
 public ResponseEntity<ErrorResponseDto> handleResourceNotFound(
-    ResourceNotFoundException ex) {
+    ResourceNotFoundException ex, HttpServletRequest request) {
     ErrorResponseDto errorResponse = new ErrorResponseDto(
-        request.getDescription(false),
+        request.getRequestURI(),
         HttpStatus.NOT_FOUND,
         ex.getMessage(),
         LocalDateTime.now()
@@ -936,12 +1107,12 @@ public ResponseEntity<ErrorResponseDto> handleResourceNotFound(
 ```
 src/test/java/
 └── com/ggoutos/{service}/
-    └── {Service}ApplicationTests.java  # Context load test
+    └── {Service}ApplicationTests.java  # Context load test only
 ```
 
 ### 11.2 Test Types
 
-**Context Load Test** (Current coverage):
+**Context Load Test** (Current coverage - all services):
 ```java
 @SpringBootTest
 class AccountsApplicationTests {
@@ -951,6 +1122,8 @@ class AccountsApplicationTests {
     }
 }
 ```
+
+**Recommended Test Types** (not yet implemented):
 
 **Repository Tests** (`@DataJpaTest`):
 ```java
@@ -1016,13 +1189,14 @@ mvn clean test jacoco:report
 
 ### 11.4 Test Coverage Expectations
 
-**Current State**: Minimal (contextLoads tests only)
+**Current State**: Minimal (contextLoads tests only across all services)
 
 **Recommended Coverage**:
 - Services: 80%+ (business logic)
-- Controllers: 70%+ (endpoint mappings)
+- Controllers: 70%+ (endpoint mappings, validation)
 - Repositories: 50%+ (custom queries)
 - Exceptions: 100% (error handling)
+- Gateway Filters: 80%+ (correlation ID generation/passthrough)
 
 ---
 
@@ -1040,22 +1214,23 @@ spring:
       password: ${CONFIG_SERVER_PASSWORD}
 ```
 
-**Environment Variables** (set in `.env.local` - git-ignored):
-```env
-CONFIG_SERVER_USER=admin
-CONFIG_SERVER_PASSWORD=securePassword123
-ENCRYPTION_KEY=mySecretEncryptionKey
-```
+**Security Filter Chain**:
+- CSRF protection disabled (stateless API)
+- `/actuator/health/**` publicly accessible (Dhealth checks)
+- All other endpoints require authentication
 
 ### 12.2 API Security Considerations
 
-**Current State**: No authentication/authorization on business services
+**Current State**: No authentication/authorization on business services or gateway
+
+**Gateway Server**: Operates as an unauthenticated reverse proxy. Any client that can reach port 8072 can route requests to any backend microservice.
 
 **Recommended Additions**:
-1. JWT-based authentication
+1. JWT-based authentication at the gateway level
 2. Role-based access control (RBAC)
 3. API rate limiting
 4. CORS configuration
+5. Authentication passthrough to downstream services
 
 ### 12.3 Secrets Management
 
@@ -1064,6 +1239,7 @@ ENCRYPTION_KEY=mySecretEncryptionKey
 - API keys
 - Encryption keys
 - OAuth credentials
+- Git tokens
 
 **Use environment variables or Docker secrets**:
 ```yaml
@@ -1072,9 +1248,9 @@ services:
   accounts:
     environment:
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
-    secrets:
-      - db_password
 ```
+
+**`.env.local`** (git-ignored) should contain local development secrets. The `.env.prod` file currently contains plaintext credentials and a GitHub PAT token - this is a **security risk**.
 
 ---
 
@@ -1088,17 +1264,19 @@ services:
 | Info | `/actuator/info` | Application information |
 | Refresh | `/actuator/refresh` | Refresh configuration |
 | BusRefresh | `/actuator/busrefresh` | Refresh via message bus |
+| Gateway | `/actuator/gateway` | Gateway routes info (gatewayserver only) |
+| Shutdown | `/actuator/shutdown` | Graceful shutdown (unrestricted) |
 
 ### 13.2 Health Checks
 
-**Readiness Probe** (includes RabbitMQ):
+**Readiness Probe** (includes RabbitMQ for ConfigServer):
 ```yaml
 # application.yml
 management:
   health:
-    readinessstate:
+    readiness-state:
       enabled: true
-    livenessstate:
+    liveness-state:
       enabled: true
   endpoint:
     health:
@@ -1118,24 +1296,22 @@ management:
 }
 ```
 
-### 13.3 Metrics Collection
+### 13.3 Distributed Tracing
 
-**Available Metrics**:
-- JVM memory usage
-- HTTP request counts and timing
-- Database connection pool stats
-- RabbitMQ connection stats
+The gateway server implements a simple correlation ID pattern:
 
-**Prometheus Format**:
-```bash
-curl http://localhost:8080/actuator/prometheus
-```
+1. **Gateway** generates UUID for `eazybank-correlation-id` header if not present
+2. **Cards/Loans** services require this header on `/api/fetch` endpoints
+3. **Accounts** service passes it to Feign client calls
+4. Response includes the same correlation ID for request tracking
+
+**Limitation**: No centralized trace aggregation (no Zipkin/Jaeger integration).
 
 ### 13.4 Logging Configuration
 
 **Default Log Format**:
 ```
-2026-04-01T10:30:00.000+03:00  INFO 12345 --- [accounts] [           main] c.g.accounts.AccountsApplication : Started AccountsApplication
+2026-04-03T10:30:00.000+03:00  INFO 12345 --- [accounts] [           main] c.g.accounts.AccountsApplication : Started AccountsApplication
 ```
 
 **Enable Debug Logging**:
@@ -1170,7 +1346,7 @@ com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failur
 **Solution**:
 - Verify MySQL is running: `docker ps | grep mysql`
 - Check connection URL in config file
-- Verify port (3306 dev, 3307/3308/3309 prod)
+- Verify port (3306 dev, 3307/3308/3309 prod via Docker mapping)
 
 **Issue 3: RabbitMQ Connection Failed**
 ```
@@ -1187,10 +1363,10 @@ Port 8080 is already in use
 ```
 **Solution**:
 ```bash
-# Find process using port (Linux/Mac)
-lsof -i :8080
+# Find process using port (Windows)
+netstat -ano | findstr :8080
 # Kill process
-kill -9 <PID>
+taskkill /PID <PID> /F
 
 # Or change port in application.yml
 server:
@@ -1244,19 +1420,20 @@ cd investments
 # 2. Create pom.xml (copy from existing service, update artifactId)
 # 3. Create package structure
 mkdir -p src/main/java/com/ggoutos/investments/{controller,service/impl,entity,dto,mapper,repository,exception,audit,constants}
-mkdir -p src/main/resources
+mkdir -p src/main/resources/{db/migration}
 mkdir -p src/test/java/com/ggoutos/investments
 
-# 4. Create main application class
+# 4. Create main application class with @EnableJpaAuditing, @EnableFeignClients, @OpenAPIDefinition
 # 5. Create application.yml (configserver client config)
-# 6. Add config to .config/investments.yml
-# 7. Update docker-compose.yml
-# 8. Build and test
+# 6. Add config to .config/investments.yml and .config/investments-prod.yml
+# 7. Update docker-compose.yml with new service
+# 8. Add route to GatewayServer RouteLocator
+# 9. Build and test
 ```
 
 **Required Files**:
-- `pom.xml` - Maven configuration
-- `InvestmentsApplication.java` - Entry point with `@EnableJpaAuditing`, `@OpenAPIDefinition`
+- `pom.xml` - Maven configuration (inherit from parent)
+- `InvestmentsApplication.java` - Entry point
 - `application.yml` - Bootstrap config
 - `IInvestmentsService.java` / `InvestmentsServiceImpl.java` - Service layer
 - `InvestmentsController.java` - REST endpoints
@@ -1267,6 +1444,7 @@ mkdir -p src/test/java/com/ggoutos/investments
 - `AuditAwareImpl.java` - Auditor provider
 - `GlobalExceptionHandler.java` - Exception handling
 - `InvestmentsApplicationTests.java` - Test class
+- `V1__init_schema.sql` - Flyway migration
 
 ### 15.2 Adding New Endpoints
 
@@ -1290,70 +1468,28 @@ public class InvestmentsController {
 
 ### 15.3 Inter-Service Communication
 
-**Using RestTemplate**:
+**Using Feign Clients** (recommended):
 ```java
-@Configuration
-public class RestTemplateConfig {
-    @Bean
-    public RestTemplate restTemplate() {
-        return new RestTemplate();
-    }
-}
-
-@Service
-@RequiredArgsConstructor
-public class AccountServiceImpl implements IAccountsService {
-    private final RestTemplate restTemplate;
-    
-    public CustomerDto getCustomerDetails(String mobileNumber) {
-        return restTemplate.getForObject(
-            "http://localhost:8080/api/fetch?mobileNumber=" + mobileNumber,
-            CustomerDto.class
-        );
-    }
-}
-```
-
-**Using WebClient** (Reactive):
-```java
-@Service
-@RequiredArgsConstructor
-public class AccountServiceImpl implements IAccountsService {
-    private final WebClient webClient;
-    
-    public Mono<CustomerDto> getCustomerDetails(String mobileNumber) {
-        return webClient.get()
-            .uri("/api/fetch?mobileNumber={mobileNumber}", mobileNumber)
-            .retrieve()
-            .bodyToMono(CustomerDto.class);
-    }
+@FeignClient(name = "investments")
+public interface InvestmentsFeignClient {
+    @GetMapping(value = "/api/fetch", consumes = "application/json")
+    InvestmentsDto fetchInvestmentDetails(
+        @RequestHeader(name = "eazybank-correlation-id", required = true) String correlationId,
+        @RequestParam String mobileNumber);
 }
 ```
 
 ### 15.4 Database Migration Process
 
-**Using Flyway**:
-```xml
-<!-- Add to pom.xml -->
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-core</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-mysql</artifactId>
-</dependency>
-```
-
-**Migration Script** (`V1__create_investments_table.sql`):
+**Flyway Migration Script** (`V1__create_investments_table.sql`):
 ```sql
 CREATE TABLE investments (
     investment_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    mobile_number VARCHAR(255),
-    investment_type VARCHAR(255),
-    amount INT,
-    created_at TIMESTAMP,
-    created_by VARCHAR(255),
+    mobile_number VARCHAR(255) NOT NULL,
+    investment_type VARCHAR(255) NOT NULL,
+    amount INT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
     updated_at TIMESTAMP,
     updated_by VARCHAR(255)
 );
@@ -1367,39 +1503,61 @@ CREATE TABLE investments (
 
 | ID | Issue | Impact | Priority | Status |
 |----|-------|--------|----------|--------|
-| TC-001 | Duplicate test class in loans service (`com.eazybytes` vs `com.ggoutos`) | Build conflicts | High | Open |
-| TC-002 | H2 references in documentation but MySQL in config | Confusion | Medium | Open |
-| TC-003 | Empty security credentials in `.env` | Security risk | High | Open |
+| SEC-001 | `.env.prod` contains plaintext credentials and GitHub PAT token | Security risk | **Critical** | Open |
+| SEC-002 | No authentication/authorization on gateway or business services | Unauthorized access | **Critical** | Open |
+| BUG-001 | CardsDto validates 12-digit card numbers, but service generates 16-digit numbers | Validation failure on update | **High** | Open |
+| BUG-002 | No database volume mounts in Docker Compose - data lost on container removal | Data persistence | **High** | Open |
 
 ### 16.2 Code Quality Issues
 
 | ID | Issue | Impact | Priority | Status |
 |----|-------|--------|----------|--------|
-| CQ-001 | Loans controller uses `@AllArgsConstructor` instead of `@RequiredArgsConstructor` | Inconsistency | Low | Open |
-| CQ-002 | Loans entity missing `@Table` annotation | Potential naming issues | Low | Open |
-| CQ-003 | Cards controller missing `@PostMapping` annotation | Implicit mapping | Low | Open |
-| CQ-004 | Inconsistent `@Valid` usage across services | Validation gaps | Medium | Open |
-| CQ-005 | Magic numbers in card number generation | Maintainability | Low | Open |
-| CQ-006 | CardsServiceImpl uses `@Slf4j` but others don't | Inconsistency | Low | Open |
+| CQ-001 | `main` methods are package-private across all services (non-standard) | Inconsistency | Low | Open |
+| CQ-002 | Cards/Loans services have `@EnableFeignClients` but no Feign clients defined | Dead configuration | Low | Open |
+| CQ-003 | `CardsConstants.CREDIT` and `DEBIT` defined but unused | Dead code | Low | Open |
+| CQ-004 | Gateway response header typo: `X-Respose-Time` should be `X-Response-Time` | API correctness | Low | Open |
+| CQ-005 | Loans `updateLoan()`/`deleteLoan()` always return `true` (417 path unreachable) | Dead code path | Low | Open |
+| CQ-006 | Inconsistent filter definition pattern in gateway (`@Component` vs `@Configuration`+`@Bean`) | Style inconsistency | Low | Open |
+| CQ-007 | ConfigServer native profile is non-functional (classpath directories don't exist) | Broken fallback | Medium | Open |
 
-### 16.3 Configuration Issues
+### 16.3 Security & Reliability Issues
 
 | ID | Issue | Impact | Priority | Status |
 |----|-------|--------|----------|--------|
-| CF-001 | Git profile hardcoded as "master" | Branch compatibility | Low | Open |
-| CF-002 | External docs URL mismatch in LoansApplication | Documentation accuracy | Low | Open |
-| CF-003 | Loans service has hardcoded JVM options | Inconsistency | Low | Open |
+| SEC-003 | ConfigServer CSRF disabled | CSRF vulnerability (low risk for internal API) | Low | Open |
+| SEC-004 | Shutdown endpoints unrestricted on all services | Denial of service risk | Medium | Open |
+| SEC-005 | Weak encryption key in prod (`very_secret_key`) | Weak property encryption | Medium | Open |
+| REL-001 | No circuit breaker on Feign clients (Accounts → Cards/Loans) | Cascading failures | Medium | Open |
+| REL-002 | Random ID generators use `java.util.Random` (not `SecureRandom`, no collision check) | ID collisions at scale | Low | Open |
 
-### 16.4 Planned Improvements
+### 16.4 Configuration Issues
+
+| ID | Issue | Impact | Priority | Status |
+|----|-------|--------|----------|--------|
+| CF-001 | Git profile hardcoded to `master` branch | Branch compatibility | Low | Open |
+| CF-002 | ConfigServer only serves datasource credentials (not full config) | Limited centralization | Low | Open |
+| CF-003 | Gateway has no ConfigServer integration | Static configuration | Medium | Open |
+
+### 16.5 Test Coverage
+
+| ID | Issue | Impact | Priority | Status |
+|----|-------|--------|----------|--------|
+| TEST-001 | Only contextLoads tests exist across all services | No business logic coverage | **High** | Open |
+| TEST-002 | No gateway filter tests | Untested tracing logic | Medium | Open |
+| TEST-003 | No repository tests | Untested custom queries | Medium | Open |
+
+### 16.6 Planned Improvements
 
 - [ ] Add comprehensive test coverage (target: 80%)
-- [ ] Implement JWT authentication
+- [ ] Implement JWT authentication at gateway level
 - [ ] Add API rate limiting
-- [ ] Configure Flyway/Liquibase for database migrations
-- [ ] Add centralized logging (ELK stack)
-- [ ] Implement distributed tracing (Sleuth/Zipkin)
-- [ ] Add circuit breaker pattern (Resilience4j)
-- [ ] Implement service discovery (Eureka/Consul)
+- [ ] Configure centralized logging (ELK stack)
+- [ ] Implement distributed tracing (Sleuth/Zipkin or Micrometer Tracing)
+- [ ] Add circuit breaker pattern (Resilience4j) for Feign clients
+- [ ] Add database volume mounts for Docker persistence
+- [ ] Fix card number validation mismatch (12 vs 16 digits)
+- [ ] Secure shutdown endpoints or remove them
+- [ ] Move secrets to Docker secrets or external secrets manager
 
 ---
 
@@ -1441,5 +1599,5 @@ CREATE TABLE investments (
 
 ---
 
-*Last Updated: 2026-04-01*
-*Version: 2.0*
+*Last Updated: 2026-04-03*
+*Version: 3.0*

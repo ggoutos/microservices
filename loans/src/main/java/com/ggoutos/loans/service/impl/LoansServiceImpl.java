@@ -8,17 +8,17 @@ import com.ggoutos.loans.mapper.LoansMapper;
 import com.ggoutos.loans.repository.LoansRepository;
 import com.ggoutos.loans.service.ILoansService;
 import com.ggoutos.utils.dto.LoansDto;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 import java.util.Random;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class LoansServiceImpl implements ILoansService {
 
-    private LoansRepository loansRepository;
+    private final LoansRepository loansRepository;
 
     /**
      * @param mobileNumber - Mobile Number of the Customer

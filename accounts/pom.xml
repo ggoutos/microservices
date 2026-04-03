@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.ggoutos</groupId>
         <artifactId>microservices</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
     <artifactId>accounts</artifactId>
     <packaging>jar</packaging>
@@ -76,7 +76,7 @@
         <dependency>
             <groupId>com.ggoutos</groupId>
             <artifactId>utils</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${revision}</version>
         </dependency>
 
         <!-- Test dependencies -->

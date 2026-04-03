@@ -1,10 +1,10 @@
-package com.ggoutos.eurekaserver;
+package com.ggoutos.gatewayserver;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class EurekaserverApplicationTests {
+class GatewayserverApplicationTests {
 
     @Test
     void contextLoads() {

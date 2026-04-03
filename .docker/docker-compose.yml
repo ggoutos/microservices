@@ -71,6 +71,23 @@ services:
       file: common-config.yml
       service: microservice-base-config
 
+  gatewayserver:
+    image: ggoutos/gatewayserver:${IMAGE_TAG}
+    container_name: gatewayserver-ms
+    ports:
+      - "8072:8072"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8072/actuator/health/readiness || exit 1" ]
+    depends_on:
+      eurekaserver:
+        condition: service_healthy
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
   configserver:
     image: ggoutos/configserver:${IMAGE_TAG}
     container_name: configserver-ms
