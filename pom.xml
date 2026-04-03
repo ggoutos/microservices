@@ -12,14 +12,12 @@
     <name>microservices</name>
     <description>Parent POM for Microservices Architecture</description>
 
-    <modules>
-        <module>utils</module>
-        <module>eurekaserver</module>
-        <module>configserver</module>
-        <module>accounts</module>
-        <module>cards</module>
-        <module>loans</module>
-    </modules>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.5</version> <!-- Spring Boot parent for dependency management spring-boot.version-->
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
 
     <properties>
         <java.version>25</java.version>
@@ -33,12 +31,15 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.5</version> <!-- Spring Boot parent for dependency management spring-boot.version-->
-        <relativePath/> <!-- lookup parent from repository -->
-    </parent>
+    <modules>
+        <module>utils</module>
+        <module>eurekaserver</module>
+        <module>gatewayserver</module>
+        <module>configserver</module>
+        <module>accounts</module>
+        <module>cards</module>
+        <module>loans</module>
+    </modules>
 
     <dependencyManagement>
         <dependencies>
@@ -73,6 +74,11 @@
         </dependency>
 
         <!-- Test dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator-test</artifactId>
