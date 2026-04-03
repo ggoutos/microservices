@@ -20,6 +20,9 @@ target/
 *.ipr
 .aider*
 .ai
+.qwen
+.gemini
+opencode.json
 
 ### NetBeans ###
 /nbproject/private/

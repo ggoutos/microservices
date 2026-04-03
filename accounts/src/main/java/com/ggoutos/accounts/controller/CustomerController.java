@@ -11,7 +11,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
-import org.apache.http.HttpStatus;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -41,7 +41,7 @@ public class CustomerController {
     public ResponseEntity<CustomerDetailsDto> fetchCustomerDetails(
             @RequestParam @Pattern(regexp = "(^$|[0-9]{10})", message = "Mobile number must be 10 digits") String mobileNumber) {
         CustomerDetailsDto customerDetailsDto = iCustomersService.fetchCustomerDetails(mobileNumber);
-        return ResponseEntity.status(HttpStatus.SC_OK).body(customerDetailsDto);
+        return ResponseEntity.status(HttpStatus.OK).body(customerDetailsDto);
     }
 
 

@@ -8,7 +8,7 @@ import com.ggoutos.cards.mapper.CardsMapper;
 import com.ggoutos.cards.repository.CardsRepository;
 import com.ggoutos.cards.service.ICardsService;
 import com.ggoutos.utils.dto.CardsDto;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -16,11 +16,11 @@ import java.util.Optional;
 import java.util.Random;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 @Slf4j
 public class CardsServiceImpl implements ICardsService {
 
-    private CardsRepository cardsRepository;
+    private final CardsRepository cardsRepository;
 
     /**
      * @param mobileNumber - Mobile Number of the Customer
