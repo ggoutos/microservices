@@ -10,7 +10,7 @@ import lombok.Data;
 public class AccountsDto {
 
     @NotEmpty(message = "AccountNumber can not be a null or empty")
-    @Pattern(regexp="(^$|[0-9]{10})",message = "AccountNumber must be 10 digits")
+    @Pattern(regexp="^[0-9]{10}$",message = "AccountNumber must be 10 digits")
     @Schema(description = "Account Number of Eazy Bank account", example = "3454433243")
     private Long accountNumber;
 

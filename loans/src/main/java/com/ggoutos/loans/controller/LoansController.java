@@ -34,7 +34,7 @@ public class LoansController {
     @Operation(summary = "Create Loan REST API", description = "REST API to create new loan inside EazyBank")
     @ApiResponses({@ApiResponse(responseCode = "201", description = "HTTP Status CREATED"), @ApiResponse(responseCode = "500", description = "HTTP Status Internal Server Error", content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))})
     @PostMapping("/create")
-    public ResponseEntity<ResponseDto> createLoan(@RequestParam @Pattern(regexp = "(^$|[0-9]{10})", message = "Mobile number must be 10 digits") String mobileNumber) {
+    public ResponseEntity<ResponseDto> createLoan(@RequestParam @Pattern(regexp = "^[0-9]{10}$", message = "Mobile number must be 10 digits") String mobileNumber) {
         iLoansService.createLoan(mobileNumber);
         return ResponseEntity.status(HttpStatus.CREATED).body(new ResponseDto(LoansConstants.STATUS_201, LoansConstants.MESSAGE_201));
     }
@@ -44,7 +44,7 @@ public class LoansController {
     @GetMapping("/fetch")
     public ResponseEntity<LoansDto> fetchLoanDetails(
             @RequestHeader(name = "eazybank-correlation-id", required = true) String correlationId,
-            @RequestParam @Pattern(regexp = "(^$|[0-9]{10})", message = "Mobile number must be 10 digits") String mobileNumber) {
+            @RequestParam @Pattern(regexp = "^[0-9]{10}$", message = "Mobile number must be 10 digits") String mobileNumber) {
         log.info("Correlation ID: {}", correlationId);
         LoansDto loansDto = iLoansService.fetchLoan(mobileNumber);
         return ResponseEntity.status(HttpStatus.OK).body(loansDto);
@@ -65,7 +65,7 @@ public class LoansController {
     @Operation(summary = "Delete Loan Details REST API", description = "REST API to delete Loan details based on a mobile number")
     @ApiResponses({@ApiResponse(responseCode = "200", description = "HTTP Status OK"), @ApiResponse(responseCode = "417", description = "Expectation Failed"), @ApiResponse(responseCode = "500", description = "HTTP Status Internal Server Error", content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))})
     @DeleteMapping("/delete")
-    public ResponseEntity<ResponseDto> deleteLoanDetails(@RequestParam @Pattern(regexp = "(^$|[0-9]{10})", message = "Mobile number must be 10 digits") String mobileNumber) {
+    public ResponseEntity<ResponseDto> deleteLoanDetails(@RequestParam @Pattern(regexp = "^[0-9]{10}$", message = "Mobile number must be 10 digits") String mobileNumber) {
         boolean isDeleted = iLoansService.deleteLoan(mobileNumber);
         if (isDeleted) {
             return ResponseEntity.status(HttpStatus.OK).body(new ResponseDto(LoansConstants.STATUS_200, LoansConstants.MESSAGE_200));

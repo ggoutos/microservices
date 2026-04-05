@@ -2,12 +2,12 @@ package com.ggoutos.loans.service.impl;
 
 import com.ggoutos.loans.constants.LoansConstants;
 import com.ggoutos.loans.entity.Loans;
-import com.ggoutos.loans.exception.LoanAlreadyExistsException;
-import com.ggoutos.loans.exception.ResourceNotFoundException;
 import com.ggoutos.loans.mapper.LoansMapper;
 import com.ggoutos.loans.repository.LoansRepository;
 import com.ggoutos.loans.service.ILoansService;
 import com.ggoutos.utils.dto.LoansDto;
+import com.ggoutos.utils.exception.EntityAlreadyExistsException;
+import com.ggoutos.utils.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +27,7 @@ public class LoansServiceImpl implements ILoansService {
     public void createLoan(String mobileNumber) {
         Optional<Loans> optionalLoans= loansRepository.findByMobileNumber(mobileNumber);
         if(optionalLoans.isPresent()){
-            throw new LoanAlreadyExistsException("Loan already registered with given mobileNumber "+mobileNumber);
+            throw new EntityAlreadyExistsException("Loan already registered with given mobileNumber "+mobileNumber);
         }
         loansRepository.save(createNewLoan(mobileNumber));
     }

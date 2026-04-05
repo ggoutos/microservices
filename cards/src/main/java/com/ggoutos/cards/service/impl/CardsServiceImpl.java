@@ -2,12 +2,12 @@ package com.ggoutos.cards.service.impl;
 
 import com.ggoutos.cards.constants.CardsConstants;
 import com.ggoutos.cards.entity.Cards;
-import com.ggoutos.cards.exception.CardAlreadyExistsException;
-import com.ggoutos.cards.exception.ResourceNotFoundException;
 import com.ggoutos.cards.mapper.CardsMapper;
 import com.ggoutos.cards.repository.CardsRepository;
 import com.ggoutos.cards.service.ICardsService;
 import com.ggoutos.utils.dto.CardsDto;
+import com.ggoutos.utils.exception.EntityAlreadyExistsException;
+import com.ggoutos.utils.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,7 +29,7 @@ public class CardsServiceImpl implements ICardsService {
     public void createCard(String mobileNumber) {
         Optional<Cards> optionalCards= cardsRepository.findByMobileNumber(mobileNumber);
         if(optionalCards.isPresent()){
-            throw new CardAlreadyExistsException("Card already registered with given mobileNumber "+mobileNumber);
+            throw new EntityAlreadyExistsException("Card already registered with given mobileNumber "+mobileNumber);
         }
         cardsRepository.save(createNewCard(mobileNumber));
     }
