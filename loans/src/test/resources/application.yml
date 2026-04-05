@@ -1,0 +1,48 @@
+# Test configuration for Loans Service
+spring:
+  application:
+    name: loans
+  datasource:
+    url: jdbc:h2:mem:loansdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: false
+  h2:
+    console:
+      enabled: true
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+    bus:
+      enabled: false
+  config:
+    import: "optional:configserver:http://localhost:8071"
+
+eureka:
+  client:
+    enabled: false
+
+# Disable RabbitMQ for tests
+spring.rabbitmq:
+  host: localhost
+  port: 5672
+  username: guest
+  password: guest
+
+# Logging
+logging:
+  level:
+    com.ggoutos.loans: DEBUG
+    org.hibernate.SQL: DEBUG

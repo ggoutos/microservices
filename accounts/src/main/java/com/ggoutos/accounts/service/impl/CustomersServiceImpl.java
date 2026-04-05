@@ -2,6 +2,7 @@ package com.ggoutos.accounts.service.impl;
 
 import com.ggoutos.accounts.entity.Accounts;
 import com.ggoutos.accounts.entity.Customer;
+import com.ggoutos.accounts.exception.ResourceNotFoundException;
 import com.ggoutos.accounts.mapper.AccountsMapper;
 import com.ggoutos.accounts.mapper.CustomerMapper;
 import com.ggoutos.accounts.repository.AccountsRepository;
@@ -11,7 +12,6 @@ import com.ggoutos.accounts.service.client.CardsFeignClient;
 import com.ggoutos.accounts.service.client.LoansFeignClient;
 import com.ggoutos.utils.dto.AccountsDto;
 import com.ggoutos.utils.dto.CustomerDetailsDto;
-import com.ggoutos.utils.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

@@ -1,12 +1,12 @@
-package com.ggoutos.utils.exception;
+package com.ggoutos.loans.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
 @ResponseStatus(value = HttpStatus.BAD_REQUEST)
-public class EntityAlreadyExistsException extends RuntimeException {
+public class LoanAlreadyExistsException extends RuntimeException {
 
-    public EntityAlreadyExistsException(String message) {
+    public LoanAlreadyExistsException(String message){
         super(message);
     }
 

@@ -3,6 +3,8 @@ package com.ggoutos.accounts.service.impl;
 import com.ggoutos.accounts.constants.AccountsConstants;
 import com.ggoutos.accounts.entity.Accounts;
 import com.ggoutos.accounts.entity.Customer;
+import com.ggoutos.accounts.exception.CustomerAlreadyExistsException;
+import com.ggoutos.accounts.exception.ResourceNotFoundException;
 import com.ggoutos.accounts.mapper.AccountsMapper;
 import com.ggoutos.accounts.mapper.CustomerMapper;
 import com.ggoutos.accounts.repository.AccountsRepository;
@@ -10,8 +12,6 @@ import com.ggoutos.accounts.repository.CustomerRepository;
 import com.ggoutos.accounts.service.IAccountsService;
 import com.ggoutos.utils.dto.AccountsDto;
 import com.ggoutos.utils.dto.CustomerDto;
-import com.ggoutos.utils.exception.EntityAlreadyExistsException;
-import com.ggoutos.utils.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -33,7 +33,7 @@ public class AccountsServiceImpl implements IAccountsService {
         Customer customer = CustomerMapper.mapToCustomer(customerDto, new Customer());
         Optional<Customer> optionalCustomer = customerRepository.findByMobileNumber(customerDto.getMobileNumber());
         if (optionalCustomer.isPresent()) {
-            throw new EntityAlreadyExistsException("Customer already registered with given mobileNumber "
+            throw new CustomerAlreadyExistsException("Customer already registered with given mobileNumber "
                     + customerDto.getMobileNumber());
         }
         Customer savedCustomer = customerRepository.save(customer);
