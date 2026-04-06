@@ -1107,12 +1107,20 @@ public ResponseEntity<ErrorResponseDto> handleResourceNotFound(
 ```
 src/test/java/
 └── com/ggoutos/{service}/
-    └── {Service}ApplicationTests.java  # Context load test only
+    ├── {Service}ApplicationTests.java  # Context load test + main method validation
+    ├── controller/
+    │   └── {Service}ControllerTest.java  # Controller tests (@WebMvcTest)
+    ├── service/impl/
+    │   └── {Service}ServiceImplTest.java  # Service tests (@ExtendWith(MockitoExtension))
+    └── entity/
+        └── {Entity}Test.java  # Entity tests (getters/setters, equals, hashCode, toString)
 ```
 
 ### 11.2 Test Types
 
-**Context Load Test** (Current coverage - all services):
+**Current Test Coverage (PR #10 - Accounts Service)**:
+
+**Context Load Test** (all services):
 ```java
 @SpringBootTest
 class AccountsApplicationTests {
@@ -1120,8 +1128,45 @@ class AccountsApplicationTests {
     void contextLoads() {
         // Verifies Spring context initializes successfully
     }
+
+    @Test
+    void testMainMethod() {
+        assertDoesNotThrow(() -> AccountsApplication.main(new String[]{}));
+    }
 }
 ```
+
+**Controller Tests** (`@WebMvcTest`):
+- `CustomerControllerTest.java` - Tests for aggregated customer details endpoint
+  - Validates successful fetch with 200 status
+  - Validates missing/invalid mobile number (400)
+  - Validates missing correlation ID header (400)
+  - Validates service exceptions (500)
+  - Validates partial data scenarios (cards/loans null)
+  - Uses `@MockitoBean` for service mocking (Spring Boot 4.x pattern)
+
+**Service Tests** (Unit - PR #10):
+- `CustomersServiceImplTest.java` - Tests for customer details aggregation
+  - Validates successful customer details retrieval with cards/loans
+  - Validates `ResourceNotFoundException` when customer not found
+  - Validates `ResourceNotFoundException` when account not found
+  - Validates correlation ID propagation to Feign clients
+  - Uses `@ExtendWith(MockitoExtension)` with `@Mock` and `@InjectMocks`
+
+**Entity Tests** (PR #10):
+- `CustomerTest.java` - Customer entity validation
+  - Getters/setters validation
+  - `equals()` and `hashCode()` tests (based on `customerId`)
+  - `toString()` validation
+  - Entity inheritance tests (extends `BaseEntity`)
+  - Constructor tests (no-args)
+  - Entity generation strategy documentation (IDENTITY)
+
+- `AccountsTest.java` - Accounts entity validation
+  - `equals()` and `hashCode()` tests (based on `accountNumber`)
+  - `toString()` validation
+  - Entity inheritance tests (extends `BaseEntity`)
+  - Constructor tests (no-args)
 
 **Recommended Test Types** (not yet implemented):
 
