@@ -4,12 +4,21 @@ server:
 logging:
   level:
     org.springframework: warn
+    com.goutos.gateway: debug
+
+resilience4j.circuitbreaker:
+  configs:
+    default:
+      slidingWindowSize: 10 # that many requests will be considered for calculating the failure rate
+      permittedNumberOfCallsInHalfOpenState: 2 # that many requests will be allowed in half-open state
+      failureRateThreshold: 50 # % of requests must fail for the circuit breaker to trip
+      waitDurationInOpenState: 10000 # how long the circuit breaker should stay in the open state before transitioning to half-open
 
 management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh, gateway, shutdown  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, gateway, circuitbreakers, circuitbreakereventst, streamcircuitbreakereventst, shutdown  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
