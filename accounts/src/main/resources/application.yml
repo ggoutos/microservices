@@ -46,6 +46,10 @@ spring:
     username: ${SPRING_RABBITMQ_USER:guest}
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
+    config:
+      uri: http://${CONFIG_SERVER_HOST:localhost}:8071
+      username: ${CONFIG_SERVER_USER}
+      password: ${CONFIG_SERVER_PASSWORD}
     openfeign:
       circuitbreaker:
         enabled: true

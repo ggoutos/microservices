@@ -2,9 +2,12 @@ package com.ggoutos.gatewayserver.config;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.timelimiter.TimeLimiterConfig;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cloud.circuitbreaker.resilience4j.ReactiveResilience4JCircuitBreakerFactory;
 import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JConfigBuilder;
 import org.springframework.cloud.client.circuitbreaker.Customizer;
+import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
+import org.springframework.cloud.gateway.filter.ratelimit.RedisRateLimiter;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.Buildable;
@@ -22,9 +25,13 @@ import static org.springframework.cloud.gateway.support.RouteMetadataUtils.CONNE
 import static org.springframework.cloud.gateway.support.RouteMetadataUtils.RESPONSE_TIMEOUT_ATTR;
 
 @Configuration
+@RequiredArgsConstructor
 public class RouteConfig {
 
     public static final String DNS_PREFIX = "goutos/bank";
+
+    private final KeyResolver userKeyResolver;
+    private final RedisRateLimiter redisRateLimiter;
 
     /**
      * Configures and builds the route locator for the gateway server.
@@ -69,6 +76,7 @@ public class RouteConfig {
                         .retry(config -> config.setRetries(3)
                                 .setMethods(HttpMethod.GET)
                                 .setBackoff(Duration.ofMillis(100), Duration.ofMillis(1000), 2, true))
+                        .requestRateLimiter(config -> config.setRateLimiter(redisRateLimiter).setKeyResolver(userKeyResolver))
                 )
                 .metadata(CONNECT_TIMEOUT_ATTR, 1000)
                 .metadata(RESPONSE_TIMEOUT_ATTR, 1000)
