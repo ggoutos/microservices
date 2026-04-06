@@ -5,6 +5,7 @@ import com.ggoutos.accounts.service.IAccountsService;
 import com.ggoutos.utils.dto.CustomerDto;
 import com.ggoutos.utils.dto.ErrorResponseDto;
 import com.ggoutos.utils.dto.ResponseDto;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -105,6 +106,7 @@ public class AccountsController {
         }
     }
 
+    @RateLimiter(name = "getBuildInfo", fallbackMethod = "getBuildInfoFallback")
     @Retry(name = "getBuildInfo", fallbackMethod = "getBuildInfoFallback")
     @GetMapping("/build-info")
     public String getBuildInfo() {

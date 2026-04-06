@@ -90,6 +90,17 @@ resilience4j.retry:
       retryExceptions: # retry these exceptions -> if maxAttempts is reached, then go to fallback method, if set then ignoreExceptions is ignored
         - java.util.concurrent.TimeoutException
 
+# RateLimiter no Redis required, as it is based on a simple token bucket algorithm that can be implemented in-memory.
+# However, if you want to use a distributed rate limiter that can be shared across multiple instances of your application,
+# you can use Redis as a backend for storing the rate limiter state. In that case, you would need to configure the
+# Redis connection and use a Redis-based implementation of the rate limiter, such as the one provided by Resilience4j.
+resilience4j.ratelimiter:
+  configs:
+    default:
+      timeoutDuration: 1000 # how long a thread can wait in ms for a response before throwing a RequestNotPermitted exception, default is 5s
+      limitRefreshPeriod: 1000 # the bucket is refilled every x milliseconds
+      limitForPeriod: 10 # how many requests can be made until the bucket is refilled
+
 info:
   app:
     name: accounts
