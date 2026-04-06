@@ -11,6 +11,9 @@ import org.springframework.context.annotation.Configuration;
 import java.time.Instant;
 import java.util.function.Function;
 
+import static org.springframework.cloud.gateway.support.RouteMetadataUtils.CONNECT_TIMEOUT_ATTR;
+import static org.springframework.cloud.gateway.support.RouteMetadataUtils.RESPONSE_TIMEOUT_ATTR;
+
 @Configuration
 public class RouteConfig {
 
@@ -53,8 +56,11 @@ public class RouteConfig {
                 .path("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/**")
                 .filters(f -> f.rewritePath("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/(?<segment>.*)", "/${segment}")
                         .addResponseHeader("X-Respose-Time", Instant.now().toString())
+                        // this is the circuit breaker for the service which overrides the default circuit breaker + httpclient timeouts configuration defined in the application.yml
                         .circuitBreaker(config -> config.setName(service + "CircuitBreaker").setFallbackUri("forward:/contactSupport"))
                 )
+                .metadata(CONNECT_TIMEOUT_ATTR, 1000)
+                .metadata(RESPONSE_TIMEOUT_ATTR, 1000)
                 .uri("lb://" + service.toUpperCase());
     }
 

@@ -47,6 +47,9 @@ spring:
             locator:
               enabled: false # Disable default discovery locator and use only RouteLocator
               lowerCaseServiceId: true
+          httpclient:
+            connect-timeout: 1000
+            response-timeout: 2s
 
 eureka:
   instance:
