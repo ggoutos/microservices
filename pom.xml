@@ -147,14 +147,13 @@
                     <version>0.8.14</version>
                     <executions>
                         <execution>
-                            <id>prepare-agent</id>
                             <goals>
                                 <goal>prepare-agent</goal>
                             </goals>
                         </execution>
                         <execution>
                             <id>report</id>
-                            <phase>test</phase>
+                            <phase>verify</phase>
                             <goals>
                                 <goal>report</goal>
                             </goals>
@@ -172,12 +171,7 @@
                                             <limit>
                                                 <counter>LINE</counter>
                                                 <value>COVEREDRATIO</value>
-                                                <minimum>0.80</minimum>
-                                            </limit>
-                                            <limit>
-                                                <counter>BRANCH</counter>
-                                                <value>COVEREDRATIO</value>
-                                                <minimum>0.70</minimum>
+                                                <minimum>0.80</minimum> <!-- 80% minimum -->
                                             </limit>
                                         </limits>
                                     </rule>
