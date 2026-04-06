@@ -1,5 +1,10 @@
 package com.ggoutos.gatewayserver.config;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.timelimiter.TimeLimiterConfig;
+import org.springframework.cloud.circuitbreaker.resilience4j.ReactiveResilience4JCircuitBreakerFactory;
+import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JConfigBuilder;
+import org.springframework.cloud.client.circuitbreaker.Customizer;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.Buildable;
@@ -58,15 +63,33 @@ public class RouteConfig {
                 .path("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/**")
                 .filters(f -> f.rewritePath("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/(?<segment>.*)", "/${segment}")
                         .addResponseHeader("X-Response-Time", Instant.now().toString())
-                        // this is the circuit breaker for the service which overrides the default circuit breaker + httpclient timeouts configuration defined in the application.yml
+                        // this is the circuit breaker for the service that overrides the default circuit breaker + httpclient timeouts configuration defined in the application.yml
                         .circuitBreaker(config -> config.setName(service + "CircuitBreaker").setFallbackUri("forward:/contactSupport"))
-                        .retry(config-> config.setRetries(3)
+                        // this is the retry policy for the service that overrides the default retry policy defined in the application.yml
+                        .retry(config -> config.setRetries(3)
                                 .setMethods(HttpMethod.GET)
                                 .setBackoff(Duration.ofMillis(100), Duration.ofMillis(1000), 2, true))
                 )
                 .metadata(CONNECT_TIMEOUT_ATTR, 1000)
                 .metadata(RESPONSE_TIMEOUT_ATTR, 1000)
                 .uri("lb://" + service.toUpperCase());
+    }
+
+
+    /**
+     * Alternate to yml configuration. Provides a default customizer for configuring the {@link ReactiveResilience4JCircuitBreakerFactory}.
+     * This method sets the default configuration for circuit breakers and time limiters using
+     * Resilience4J's configuration builders.
+     *
+     * @return a {@link Customizer} for {@link ReactiveResilience4JCircuitBreakerFactory} that applies
+     * a default configuration with a Resilience4J circuit breaker and time limiter.
+     */
+    @Bean
+    public Customizer<ReactiveResilience4JCircuitBreakerFactory> defaultCustomizer() {
+        return factory -> factory.configureDefault(id -> new Resilience4JConfigBuilder(id)
+                .circuitBreakerConfig(CircuitBreakerConfig.ofDefaults())
+                .timeLimiterConfig(TimeLimiterConfig.custom().timeoutDuration(Duration.ofSeconds(4)).build())
+                .build());
     }
 
 }

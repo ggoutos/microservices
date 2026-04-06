@@ -8,7 +8,6 @@
         <version>${revision}</version>
     </parent>
     <artifactId>gatewayserver</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
     <name>gatewayserver</name>
     <description>gatewayserver</description>
     <url/>
