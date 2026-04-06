@@ -7,7 +7,9 @@ import org.springframework.cloud.gateway.route.builder.PredicateSpec;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.function.Function;
 
@@ -55,9 +57,12 @@ public class RouteConfig {
         return p -> p
                 .path("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/**")
                 .filters(f -> f.rewritePath("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/(?<segment>.*)", "/${segment}")
-                        .addResponseHeader("X-Respose-Time", Instant.now().toString())
+                        .addResponseHeader("X-Response-Time", Instant.now().toString())
                         // this is the circuit breaker for the service which overrides the default circuit breaker + httpclient timeouts configuration defined in the application.yml
                         .circuitBreaker(config -> config.setName(service + "CircuitBreaker").setFallbackUri("forward:/contactSupport"))
+                        .retry(config-> config.setRetries(3)
+                                .setMethods(HttpMethod.GET)
+                                .setBackoff(Duration.ofMillis(100), Duration.ofMillis(1000), 2, true))
                 )
                 .metadata(CONNECT_TIMEOUT_ATTR, 1000)
                 .metadata(RESPONSE_TIMEOUT_ATTR, 1000)
