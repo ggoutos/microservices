@@ -20,6 +20,8 @@ services:
     container_name: accountsdb
     ports:
       - "3307:3306"
+    volumes:
+      - accounts-data:/var/lib/mysql
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -34,6 +36,8 @@ services:
     container_name: loansdb
     ports:
       - "3308:3306"
+    volumes:
+      - loans-data:/var/lib/mysql
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -48,6 +52,8 @@ services:
     container_name: cardsdb
     ports:
       - "3309:3306"
+    volumes:
+      - cards-data:/var/lib/mysql
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -175,3 +181,8 @@ services:
 networks:
   microservices-network:
     driver: bridge
+
+volumes:
+  accounts-data:
+  cards-data:
+  loans-data:
