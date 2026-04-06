@@ -11,26 +11,12 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 
 @SpringBootApplication
 @EnableFeignClients
-@OpenAPIDefinition(
-        info = @Info(
-                title = "Accounts microservice REST API Documentation",
-                description = "EazyBank Accounts microservice REST API Documentation",
-                version = "v1",
-                contact = @Contact(
-                        name = "George Goutos",
-                        email = "ggoutos@outlook.com",
-                        url = "https://www.eazybytes.com"
-                ),
-                license = @License(
-                        name = "Apache 2.0",
-                        url = "https://www.eazybytes.com"
-                )
-        ),
-        externalDocs = @ExternalDocumentation(
-                description = "EazyBank Accounts microservice REST API Documentation",
-                url = "https://www.eazybytes.com/swagger-ui.html"
-        )
-)
+@OpenAPIDefinition(info = @Info(title = "Accounts microservice REST API Documentation",
+        description = "EazyBank Accounts microservice REST API Documentation", version = "v1",
+        contact = @Contact(name = "George Goutos", email = "ggoutos@outlook.com", url = "https://www.eazybytes.com"),
+        license = @License(name = "Apache 2.0", url = "https://www.eazybytes.com")),
+        externalDocs = @ExternalDocumentation(description = "EazyBank Accounts microservice REST API Documentation",
+                url = "https://www.eazybytes.com/swagger-ui.html"))
 public class AccountsApplication {
 
     static void main(String[] args) {

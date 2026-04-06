@@ -43,10 +43,9 @@ spring:
     username: ${SPRING_RABBITMQ_USER:guest}
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
-    config:
-      uri: http://${CONFIG_SERVER_HOST:localhost}:8071
-      username: ${CONFIG_SERVER_USER}
-      password: ${CONFIG_SERVER_PASSWORD}
+    openfeign:
+      circuitbreaker:
+        enabled: true
   config:
     import: "configserver:${spring.cloud.config.uri}"
 
@@ -58,6 +57,15 @@ eureka:
     fetch-registry: true
     service-url:
       defaultZone: http://${EUREKA_SERVER_HOST:localhost}:8070/eureka/
+
+resilience4j.circuitbreaker:
+  configs:
+    default:
+      slidingWindowSize: 10 # that many requests will be considered for calculating the failure rate
+      permittedNumberOfCallsInHalfOpenState: 2 # that many requests will be allowed in half-open state
+      failureRateThreshold: 50 # % of requests must fail for the circuit breaker to trip
+      waitDurationInOpenState: 10000 # how long the circuit breaker should stay in the open state before transitioning to half-open
+
 
 info:
   app:
