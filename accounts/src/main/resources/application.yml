@@ -5,6 +5,9 @@ logging:
   level:
     org.springframework: warn
 
+build:
+  version: "0.0.1-SNAPSHOT"
+
 management:
   endpoints:
     web:
@@ -66,6 +69,22 @@ resilience4j.circuitbreaker:
       failureRateThreshold: 50 # % of requests must fail for the circuit breaker to trip
       waitDurationInOpenState: 10000 # how long the circuit breaker should stay in the open state before transitioning to half-open
 
+resilience4j.timelimiter:
+  configs:
+    default:
+      timeoutDuration: 4s # how long the call should be allowed to take before timing out
+
+resilience4j.retry:
+  configs:
+    default:
+      maxAttempts: 3
+      waitDuration: 500
+      enableExponentialBackoff: true
+      exponentialBackoffMultiplier: 2
+      ignoreExceptions: # ignore these exceptions and don't retry -> go to fallback method directly
+        - java.lang.NullPointerException
+      retryExceptions: # retry these exceptions -> if maxAttempts is reached, then go to fallback method, if set then ignoreExceptions is ignored
+        - java.util.concurrent.TimeoutException
 
 info:
   app:
