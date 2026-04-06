@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-public class CustomersServiceImpl implements ICustomersService {
+    public class CustomersServiceImpl implements ICustomersService {
 
     private final AccountsRepository accountsRepository;
     private final CustomerRepository customerRepository;
