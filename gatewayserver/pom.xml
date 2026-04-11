@@ -8,7 +8,6 @@
         <version>${revision}</version>
     </parent>
     <artifactId>gatewayserver</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
     <name>gatewayserver</name>
     <description>gatewayserver</description>
     <url/>
@@ -32,6 +31,14 @@
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
         </dependency>
 
         <dependency>

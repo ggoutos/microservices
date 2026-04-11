@@ -15,11 +15,27 @@ services:
       file: common-config.yml
       service: network-deploy-service
 
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
   accountsdb:
     image: mysql:lts
     container_name: accountsdb
     ports:
       - "3307:3306"
+    volumes:
+      - accounts-data:/var/lib/mysql
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -34,6 +50,8 @@ services:
     container_name: loansdb
     ports:
       - "3308:3306"
+    volumes:
+      - loans-data:/var/lib/mysql
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -48,6 +66,8 @@ services:
     container_name: cardsdb
     ports:
       - "3309:3306"
+    volumes:
+      - cards-data:/var/lib/mysql
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -80,6 +100,8 @@ services:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8072/actuator/health/readiness || exit 1" ]
     depends_on:
       eurekaserver:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     env_file:
       - .env
@@ -175,3 +197,8 @@ services:
 networks:
   microservices-network:
     driver: bridge
+
+volumes:
+  accounts-data:
+  cards-data:
+  loans-data:

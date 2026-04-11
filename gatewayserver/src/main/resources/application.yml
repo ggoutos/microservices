@@ -4,12 +4,13 @@ server:
 logging:
   level:
     org.springframework: warn
+    com.goutos.gateway: debug
 
 management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh, gateway, shutdown  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, gateway, circuitbreakers, circuitbreakereventst, streamcircuitbreakereventst, shutdown  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
@@ -30,6 +31,12 @@ management:
 spring:
   application:
     name: gatewayserver
+  data:
+    redis:
+      connect-timeout: 2s
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 1s
   cloud:
     gateway:
       server:
@@ -38,6 +45,35 @@ spring:
             locator:
               enabled: false # Disable default discovery locator and use only RouteLocator
               lowerCaseServiceId: true
+          httpclient:
+            connect-timeout: 1000
+            response-timeout: 2s
+
+
+resilience4j.circuitbreaker:
+  configs:
+    default:
+      slidingWindowSize: 10 # that many requests will be considered for calculating the failure rate
+      permittedNumberOfCallsInHalfOpenState: 2 # that many requests will be allowed in half-open state
+      failureRateThreshold: 50 # % of requests must fail for the circuit breaker to trip
+      waitDurationInOpenState: 10000 # how long the circuit breaker should stay in the open state before transitioning to half-open
+
+resilience4j.timelimiter:
+  configs:
+    default:
+      timeoutDuration: 4s # how long the circuit breaker/ time limiter should wait for a response
+
+resilience4j.retry:
+  configs:
+    default:
+      maxAttempts: 3
+      waitDuration: 500
+      enableExponentialBackoff: true
+      exponentialBackoffMultiplier: 2
+      ignoreExceptions:
+        - java.lang.NullPointerException
+      retryExceptions:
+        - java.util.concurrent.TimeoutException
 
 eureka:
   instance:

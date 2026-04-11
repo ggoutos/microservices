@@ -5,6 +5,8 @@ import com.ggoutos.accounts.service.IAccountsService;
 import com.ggoutos.utils.dto.CustomerDto;
 import com.ggoutos.utils.dto.ErrorResponseDto;
 import com.ggoutos.utils.dto.ResponseDto;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import io.github.resilience4j.retry.annotation.Retry;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -14,12 +16,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @Validated
@@ -28,6 +33,9 @@ import org.springframework.web.bind.annotation.*;
 public class AccountsController {
 
     private final IAccountsService iAccountsService;
+
+    @Value("${build.version}")
+    private String buildVersion;
 
     @Operation(summary = "Create Account REST API", description = "REST API to create new Customer &  Account inside EazyBank")
     @ApiResponses({
@@ -83,9 +91,9 @@ public class AccountsController {
             @ApiResponse(responseCode = "500", description = "HTTP Status Internal Server Error", content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @DeleteMapping("/delete")
-    public ResponseEntity<ResponseDto> deleteAccountDetails(@RequestParam
-                                                            @Pattern(regexp = "^[0-9]{10}$", message = "Mobile number must be 10 digits")
-                                                            String mobileNumber) {
+    public ResponseEntity<ResponseDto> deleteAccountDetails(
+            @RequestParam @Pattern(regexp = "^[0-9]{10}$", message = "Mobile number must be 10 digits")
+            String mobileNumber) {
         boolean isDeleted = iAccountsService.deleteAccount(mobileNumber);
         if (isDeleted) {
             return ResponseEntity
@@ -98,5 +106,17 @@ public class AccountsController {
         }
     }
 
+    @RateLimiter(name = "getBuildInfo", fallbackMethod = "getBuildInfoFallback")
+    @Retry(name = "getBuildInfo", fallbackMethod = "getBuildInfoFallback")
+    @GetMapping("/build-info")
+    public String getBuildInfo() {
+        log.info("Fetching build info");
+        return buildVersion;
+    }
+
+    private String getBuildInfoFallback(Throwable t) {
+        log.error("Failed to fetch build info, returning fallback value: Error: {}", t.getMessage());
+        return "1.0.0";
+    }
 
 }

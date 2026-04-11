@@ -5,6 +5,9 @@ logging:
   level:
     org.springframework: warn
 
+build:
+  version: "0.0.1-SNAPSHOT"
+
 management:
   endpoints:
     web:
@@ -47,6 +50,9 @@ spring:
       uri: http://${CONFIG_SERVER_HOST:localhost}:8071
       username: ${CONFIG_SERVER_USER}
       password: ${CONFIG_SERVER_PASSWORD}
+    openfeign:
+      circuitbreaker:
+        enabled: true
   config:
     import: "configserver:${spring.cloud.config.uri}"
 
@@ -58,6 +64,42 @@ eureka:
     fetch-registry: true
     service-url:
       defaultZone: http://${EUREKA_SERVER_HOST:localhost}:8070/eureka/
+
+resilience4j.circuitbreaker:
+  configs:
+    default:
+      slidingWindowSize: 10 # that many requests will be considered for calculating the failure rate
+      permittedNumberOfCallsInHalfOpenState: 2 # that many requests will be allowed in half-open state
+      failureRateThreshold: 50 # % of requests must fail for the circuit breaker to trip
+      waitDurationInOpenState: 10000 # how long the circuit breaker should stay in the open state before transitioning to half-open
+
+resilience4j.timelimiter:
+  configs:
+    default:
+      timeoutDuration: 4s # how long the call should be allowed to take before timing out
+
+resilience4j.retry:
+  configs:
+    default:
+      maxAttempts: 3
+      waitDuration: 500
+      enableExponentialBackoff: true
+      exponentialBackoffMultiplier: 2
+      ignoreExceptions: # ignore these exceptions and don't retry -> go to fallback method directly
+        - java.lang.NullPointerException
+      retryExceptions: # retry these exceptions -> if maxAttempts is reached, then go to fallback method, if set then ignoreExceptions is ignored
+        - java.util.concurrent.TimeoutException
+
+# RateLimiter no Redis required, as it is based on a simple token bucket algorithm that can be implemented in-memory.
+# However, if you want to use a distributed rate limiter that can be shared across multiple instances of your application,
+# you can use Redis as a backend for storing the rate limiter state. In that case, you would need to configure the
+# Redis connection and use a Redis-based implementation of the rate limiter, such as the one provided by Resilience4j.
+resilience4j.ratelimiter:
+  configs:
+    default:
+      timeoutDuration: 1000 # how long a thread can wait in ms for a response before throwing a RequestNotPermitted exception, default is 5s
+      limitRefreshPeriod: 1000 # the bucket is refilled every x milliseconds
+      limitForPeriod: 10 # how many requests can be made until the bucket is refilled
 
 info:
   app:
