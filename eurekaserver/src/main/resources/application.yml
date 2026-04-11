@@ -18,7 +18,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh, shutdown  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, shutdown, metrics, prometheus  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
@@ -28,6 +28,9 @@ management:
     health:
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 
 spring:

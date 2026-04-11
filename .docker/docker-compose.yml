@@ -1,6 +1,7 @@
 services:
   read:
     image: grafana/loki:latest
+    container_name: loki-read
     command: "-config.file=/etc/loki/config.yaml -target=read -query-scheduler.use-scheduler-ring=false"
     ports:
       - "3101:3100"
@@ -16,6 +17,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
     networks: &loki-dns
       microservices-network:
         aliases:
@@ -23,6 +29,7 @@ services:
 
   write:
     image: grafana/loki:latest
+    container_name: loki-write
     command: "-config.file=/etc/loki/config.yaml -target=write"
     ports:
       - "3102:3100"
@@ -36,6 +43,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
     depends_on:
       - minio
     networks:
@@ -43,6 +55,7 @@ services:
 
   alloy:
     image: grafana/alloy:latest
+    container_name: grafana-alloy
     volumes:
       - ./alloy/alloy-local-config.yaml:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -57,6 +70,7 @@ services:
 
   minio:
     image: minio/minio
+    container_name: loki-minio
     entrypoint:
       - sh
       - -euc
@@ -82,31 +96,32 @@ services:
       file: common-config.yml
       service: network-deploy-service
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
   grafana:
     image: grafana/grafana:latest
+    container_name: grafana
     environment:
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
     depends_on:
       - gateway
     entrypoint:
       - sh
       - -euc
       - |
-        mkdir -p /etc/grafana/provisioning/datasources
-        cat <<EOF > /etc/grafana/provisioning/datasources/ds.yaml
-        apiVersion: 1
-        datasources:
-          - name: Loki
-            type: loki
-            access: proxy
-            url: http://gateway:3100
-            jsonData:
-              httpHeaderName1: "X-Scope-OrgID"
-            secureJsonData:
-              httpHeaderValue1: "tenant1"
-        EOF
         /run.sh
     ports:
       - "3000:3000"
@@ -121,6 +136,7 @@ services:
 
   backend:
     image: grafana/loki:latest
+    container_name: loki-backend
     volumes:
       - ./loki/loki-config.yaml:/etc/loki/config.yaml
     ports:
@@ -142,6 +158,7 @@ services:
 
   gateway:
     image: nginx:latest
+    container_name: loki-gateway
     depends_on:
       - read
       - write
@@ -212,6 +229,7 @@ services:
 
   rabbit:
     image: rabbitmq:4.2.5-management-alpine
+    container_name: rabbitmq
     hostname: rabbitmq
     ports:
       - "5672:5672"
@@ -228,6 +246,7 @@ services:
 
   redis:
     image: redis:alpine
+    container_name: redis-cache
     ports:
       - "6379:6379"
     healthcheck:
@@ -242,7 +261,7 @@ services:
 
   accountsdb:
     image: mysql:lts
-    container_name: accountsdb
+    container_name: accounts-db
     ports:
       - "3307:3306"
     volumes:
@@ -258,7 +277,7 @@ services:
 
   loansdb:
     image: mysql:lts
-    container_name: loansdb
+    container_name: loans-db
     ports:
       - "3308:3306"
     volumes:
@@ -274,7 +293,7 @@ services:
 
   cardsdb:
     image: mysql:lts
-    container_name: cardsdb
+    container_name: cards-db
     ports:
       - "3309:3306"
     volumes:

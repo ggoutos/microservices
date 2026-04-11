@@ -10,7 +10,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh, gateway, circuitbreakers, circuitbreakereventst, streamcircuitbreakereventst, shutdown  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, shutdown, metrics, prometheus, gateway, circuitbreakers, circuitbreakereventst, streamcircuitbreakereventst  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
@@ -27,6 +27,9 @@ management:
   info:
     env:
       enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 spring:
   application:
