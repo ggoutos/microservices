@@ -11,6 +11,10 @@ import lombok.Data;
 @Data
 public class LoansDto {
 
+    @Positive(message = "Customer ID should be greater than zero")
+    @Schema(description = "Customer ID", example = "1234")
+    private Long customerId;
+
     @NotEmpty(message = "Mobile Number can not be a null or empty")
     @Pattern(regexp = "^[0-9]{10}$", message = "Mobile Number must be 10 digits")
     @Schema(description = "Mobile Number of Customer", example = "4365327698")

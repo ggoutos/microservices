@@ -20,6 +20,13 @@ public interface ICardsService {
     CardsDto fetchCard(String mobileNumber);
 
     /**
+     * Fetch card details based on customer ID
+     * @param customerId - Input Customer ID
+     * @return Card Details based on a given customerId
+     */
+    CardsDto fetchCardByCustomerId(Long customerId);
+
+    /**
      * Update card details
      * @param cardsDto - CardsDto Object
      * @return boolean indicating if the update of card details is successful or not

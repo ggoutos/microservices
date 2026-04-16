@@ -22,6 +22,9 @@ public class Cards extends BaseEntity {
     @Column(name = "card_id")
     private Long cardId;
 
+    @Column(name = "customer_id")
+    private Long customerId;
+
     @Column(name = "mobile_number")
     private String mobileNumber;
 

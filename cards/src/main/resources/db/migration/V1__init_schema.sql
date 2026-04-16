@@ -3,6 +3,7 @@ CREATE DATABASE IF NOT EXISTS cardsdb;
 CREATE TABLE IF NOT EXISTS `cards`
 (
     `card_id`          int          NOT NULL AUTO_INCREMENT,
+    `customer_id`      int          NOT NULL,
     `mobile_number`    varchar(15)  NOT NULL,
     `card_number`      varchar(100) NOT NULL,
     `card_type`        varchar(100) NOT NULL,

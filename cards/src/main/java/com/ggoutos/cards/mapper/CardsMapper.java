@@ -6,6 +6,7 @@ import com.ggoutos.utils.dto.CardsDto;
 public class CardsMapper {
 
     public static CardsDto mapToCardsDto(Cards cards, CardsDto cardsDto) {
+        cardsDto.setCustomerId(cards.getCustomerId());
         cardsDto.setMobileNumber(cards.getMobileNumber());
         cardsDto.setCardNumber(cards.getCardNumber());
         cardsDto.setCardType(cards.getCardType());
@@ -16,6 +17,7 @@ public class CardsMapper {
     }
 
     public static Cards mapToCards(CardsDto cardsDto, Cards cards) {
+        cards.setCustomerId(cardsDto.getCustomerId());
         cards.setMobileNumber(cardsDto.getMobileNumber());
         cards.setCardNumber(cardsDto.getCardNumber());
         cards.setCardType(cardsDto.getCardType());

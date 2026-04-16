@@ -58,6 +58,13 @@ public class CardsServiceImpl implements ICardsService {
     }
 
     @Override
+    public CardsDto fetchCardByCustomerId(Long customerId) {
+        Cards cards = cardsRepository.findByCustomerId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Card", "customerId", customerId.toString()));
+        return CardsMapper.mapToCardsDto(cards, new CardsDto());
+    }
+
+    @Override
     public boolean updateCard(CardsDto cardsDto) {
         Cards cards = cardsRepository.findByCardNumber(cardsDto.getCardNumber())
                 .orElseThrow(() -> new ResourceNotFoundException("Card", "cardNumber", cardsDto.getCardNumber()));

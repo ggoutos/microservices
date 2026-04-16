@@ -63,6 +63,19 @@ public class LoansServiceImpl implements ILoansService {
 
     /**
      *
+     * @param customerId - Input customer ID
+     * @return Loan Details based on a given customerId
+     */
+    @Override
+    public LoansDto fetchLoanByCustomerId(Long customerId) {
+        Loans loans = loansRepository.findByCustomerId(customerId).orElseThrow(
+                () -> new ResourceNotFoundException("Loan", "customerId", customerId.toString())
+        );
+        return LoansMapper.mapToLoansDto(loans, new LoansDto());
+    }
+
+    /**
+     *
      * @param loansDto - LoansDto Object
      * @return boolean indicating if the update of loan details is successful or not
      */

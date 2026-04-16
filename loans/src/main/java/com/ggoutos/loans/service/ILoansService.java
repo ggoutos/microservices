@@ -20,6 +20,13 @@ public interface ILoansService {
 
     /**
      *
+     * @param customerId - Customer ID
+     *  @return Loan Details based on a given customerId
+     */
+    LoansDto fetchLoanByCustomerId(Long customerId);
+
+    /**
+     *
      * @param loansDto - LoansDto Object
      * @return boolean indicating if the update of card details is successful or not
      */
