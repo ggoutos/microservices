@@ -107,6 +107,19 @@ services:
       file: common-config.yml
       service: network-deploy-service
 
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: -config.file /etc/tempo-config.yml
+    ports:
+      - "3110:3100"
+      - "4318:4318"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo-config.yml
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -116,6 +129,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
       - ./grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - grafana-data:/var/lib/grafana
     depends_on:
       - gateway
     entrypoint:
@@ -413,9 +427,9 @@ services:
         condition: service_healthy
       configserver:
         condition: service_healthy
-    environment:
-      - BPL_JVM_THREAD_COUNT=50 # Tells Paketo Buildpacks memory calculator the expected thread count
-      - JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xss256k   # XX:ActiveProcessorCount Aligns JVM CPU detection with the container's CPU limit
+#    environment:
+#      - BPL_JVM_THREAD_COUNT=50 # Tells Paketo Buildpacks memory calculator the expected thread count
+#      - JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xss256k   # XX:ActiveProcessorCount Aligns JVM CPU detection with the container's CPU limit
       # Xss256k Reduces per-thread stack size from default 1MB to 256KB
     env_file:
       - .env
@@ -432,3 +446,4 @@ volumes:
   accounts-data:
   cards-data:
   loans-data:
+  grafana-data:

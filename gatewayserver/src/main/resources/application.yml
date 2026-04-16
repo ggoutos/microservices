@@ -5,6 +5,8 @@ logging:
   level:
     org.springframework: warn
     com.goutos.gateway: debug
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id},%X{span_id}]"
 
 management:
   endpoints:
@@ -30,6 +32,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+otel:
+  service:
+    name: ${spring.application.name}
 
 spring:
   application:

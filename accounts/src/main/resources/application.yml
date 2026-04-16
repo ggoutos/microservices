@@ -4,6 +4,8 @@ server:
 logging:
   level:
     org.springframework: warn
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id},%X{span_id}]"
 
 build:
   version: "0.0.1-SNAPSHOT"
@@ -30,6 +32,10 @@ management:
   metrics:
     tags:
         application: ${spring.application.name}
+
+otel:
+  service:
+    name: ${spring.application.name}
 
 spring:
   application:
