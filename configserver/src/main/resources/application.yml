@@ -6,7 +6,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, shutdown, metrics, prometheus  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
@@ -20,12 +20,19 @@ management:
         readiness:
           include:
             - rabbit
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+otel:
+  service:
+    name: ${spring.application.name}
 
 logging:
   level:
-    org:
-      springframework:
-        security: warn
+    org.springframework.security: warn
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id},%X{span_id}]"
 
 encrypt:
   key: ${ENCRYPTION_KEY} # This is the encryption key that will be used to encrypt and decrypt properties. You should set this to a secure value in production.

@@ -1,5 +1,10 @@
 services:
   network-deploy-service:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
     networks:
       - microservices-network
 
@@ -12,11 +17,6 @@ services:
       retries: 10
       interval: 10s
       start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
 
   microservice-base-config:
     extends:
@@ -27,8 +27,3 @@ services:
       timeout: 5s       # timeout after which the healthcheck fails
       retries: 5        # retries when the healthcheck fails
       start_period: 20s # wait for container startup before checking healthcheck
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M

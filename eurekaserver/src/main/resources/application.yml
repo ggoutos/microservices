@@ -4,6 +4,8 @@ server:
 logging:
   level:
     org.springframework: warn
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id},%X{span_id}]"
 
 eureka:
   instance:
@@ -18,7 +20,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh, shutdown  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, shutdown, metrics, prometheus  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
@@ -28,6 +30,13 @@ management:
     health:
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+otel:
+  service:
+    name: ${spring.application.name}
 
 
 spring:

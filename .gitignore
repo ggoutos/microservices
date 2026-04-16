@@ -23,6 +23,7 @@ target/
 .qwen
 .gemini
 opencode.json
+/.docker/.data/
 
 ### NetBeans ###
 /nbproject/private/
@@ -36,3 +37,4 @@ build/
 
 ### VS Code ###
 .vscode/
+
