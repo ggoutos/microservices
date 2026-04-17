@@ -1,4 +1,19 @@
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.1
+    container_name: keycloak
+    ports:
+      - "7080:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "admin"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "admin"
+    command: "start-dev"
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
   read:
     image: grafana/loki:latest
     container_name: loki-read
@@ -374,8 +389,8 @@ services:
   accounts:
     image: ggoutos/accounts:${IMAGE_TAG}
     container_name: accounts-ms
-    ports:
-      - "8080:8080"
+#    ports:
+#      - "8080:8080"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health/readiness || exit 1" ]
     depends_on:
@@ -395,8 +410,8 @@ services:
   cards:
     image: ggoutos/cards:${IMAGE_TAG}
     container_name: cards-ms
-    ports:
-      - "9000:9000"
+#    ports:
+#      - "9000:9000"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9000/actuator/health/readiness || exit 1" ]
     depends_on:
@@ -416,8 +431,8 @@ services:
   loans:
     image: ggoutos/loans:${IMAGE_TAG}
     container_name: loans-ms
-    ports:
-      - "8090:8090"
+#    ports:
+#      - "8090:8090"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8090/actuator/health/readiness || exit 1" ]
     depends_on:
@@ -447,3 +462,4 @@ volumes:
   cards-data:
   loans-data:
   grafana-data:
+  keycloak-data:
