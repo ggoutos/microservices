@@ -1,0 +1,21 @@
+server:
+  port: 9010
+
+spring:
+  application:
+    name: message
+  cloud:
+    function:
+      definition: email|sms # This line defines the function composition. It means that the output of the 'email' function will be sent to the input of the 'sms' function. You can change this to 'email' or 'sms' if you want to use them separately.
+    stream:
+      bindings:
+        emailsms-in-0:
+          destination: send-communication
+          group: ${spring.application.name}
+        emailsms-out-0:
+          destination: communication-sent
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${SPRING_RABBITMQ_USER:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}

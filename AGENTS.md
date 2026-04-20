@@ -34,10 +34,17 @@
 | **eurekaserver** | 8070 | Service discovery & registration |
 | **configserver** | 8071 | Centralized configuration |
 | **gatewayserver** | 8072 | API Gateway (reverse proxy) |
-| **accounts** | 8080 | Customer accounts management |
-| **loans** | 8090 | Loan management |
-| **cards** | 9000 | Credit/debit cards management |
-| **rabbitmq** | 5672, 15672 | Message broker (config refresh) |
+| **accounts** | 8080 | Customer accounts management (internal, not exposed) |
+| **loans** | 8090 | Loan management (internal, not exposed) |
+| **cards** | 9000 | Credit/debit cards management (internal, not exposed) |
+| **message** | 9010 | Event-driven messaging (email/SMS notifications) (internal, not exposed) |
+| **rabbitmq** | 5672, 15672 | Message broker (config refresh, event communication) |
+| **redis** | 6379 | Redis cache (session, rate limiting) |
+| **keycloak** | 7080 | Identity & Access Management (OAuth2/OIDC) |
+| **prometheus** | 9090 | Metrics collection & visualization |
+| **grafana** | 3000 | Observability dashboards (Loki, Prometheus, Tempo) |
+| **tempo** | 3110, 4318 | Distributed tracing backend & OTEL receiver |
+| **loki** | 3100 | Log aggregation (read: 3101, write: 3102) |
 | **accountsdb** | 3307 | MySQL database (accounts) |
 | **loansdb** | 3308 | MySQL database (loans) |
 | **cardsdb** | 3309 | MySQL database (cards) |
@@ -62,12 +69,14 @@ cd .docker && docker compose --env-file .env.prod up # Prod
 
 ### API Endpoint Patterns
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/create?mobileNumber={}` | Create resource |
-| GET | `/api/fetch?mobileNumber={}` | Fetch by mobile number |
-| PUT | `/api/update` | Update resource (body) |
-| DELETE | `/api/delete?mobileNumber={}` | Delete by mobile number |
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| POST | `/api/create?mobileNumber={}` | Create resource | OAuth2 JWT |
+| GET | `/api/fetch?mobileNumber={}` | Fetch by mobile number | OAuth2 JWT |
+| PUT | `/api/update` | Update resource (body) | OAuth2 JWT |
+| DELETE | `/api/delete?mobileNumber={}` | Delete by mobile number | OAuth2 JWT |
+
+**Note**: All endpoints require OAuth2 JWT bearer token from Keycloak (resource server mode)
 
 ### Gateway Routing Pattern
 
@@ -84,16 +93,19 @@ Example: `http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234
 
 ### URLs
 
-| Service | Swagger UI | Actuator Health | Eureka Registration |
-|---------|------------|-----------------|---------------------|
-| accounts | http://localhost:8080/swagger-ui.html | http://localhost:8080/actuator/health | ✅ (client) |
-| cards | http://localhost:9000/swagger-ui.html | http://localhost:9000/actuator/health | ✅ (client) |
-| loans | http://localhost:8090/swagger-ui.html | http://localhost:8090/actuator/health | ✅ (client) |
-| gatewayserver | N/A | http://localhost:8072/actuator/health | ✅ (client) |
-| configserver | N/A | http://localhost:8071/actuator/health | ❌ (standalone) |
-| eurekaserver | http://localhost:8070 | http://localhost:8070/actuator/health | ✅ (self) |
+| Service | Swagger UI | Actuator Health | Eureka Registration | Port Status |
+|---------|------------|-----------------|---------------------|------------|
+| accounts | N/A (internal) | http://localhost:8080/actuator/health | ✅ (client) | Internal |
+| cards | N/A (internal) | http://localhost:9000/actuator/health | ✅ (client) | Internal |
+| loans | N/A (internal) | http://localhost:8090/actuator/health | ✅ (client) | Internal |
+| gatewayserver | N/A | http://localhost:8072/actuator/health | ✅ (client) | 8072 |
+| configserver | N/A | http://localhost:8071/actuator/health | ❌ (standalone) | 8071 |
+| eurekaserver | http://localhost:8070 | http://localhost:8070/actuator/health | ✅ (self) | 8070 |
+| **grafana** | **http://localhost:3000** | **N/A** | **N/A** | **3000** |
+| **prometheus** | **http://localhost:9090** | **N/A** | **N/A** | **9090** |
+| **keycloak** | **http://localhost:7080** | **N/A** | **N/A** | **7080** |
 
-**Note:** All services use MySQL databases (H2 fully deprecated). Flyway manages schema migrations. Feign clients enable inter-service communication from Accounts to Cards/Loans services. The gateway server adds distributed tracing via `eazybank-correlation-id` header.
+**Note**: All services use MySQL databases with persistent volumes. Circuit breaker, retry, and rate limiter patterns enabled via Resilience4j. OpenTelemetry distributed tracing sends traces to Tempo (port 4318). Logs aggregated via Loki. OAuth2 JWT authentication via Keycloak.
 
 ---
 
@@ -102,52 +114,89 @@ Example: `http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234
 ### System Context
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     EazyBank Microservices Platform                       │
-│                                                                           │
-│                        ┌─────────────────┐                               │
-│                        │  GatewayServer  │                               │
-│                        │     :8072       │                               │
-│                        │  (WebFlux/Reactive)                            │
-│                        │  [Trace Filters]                               │
-│                        └────────┬────────┘                               │
-│                                 │                                         │
-│         ┌───────────────────────┼───────────────────────┐               │
-│         │                       │                       │               │
-│  ┌──────▼───────┐     ┌────────▼───────┐     ┌────────▼───────┐       │
+┌───────────────────────────────────────────────────────────────────────┐
+│                     EazyBank Microservices Platform                   │
+│                                                                       │
+│                        ┌─────────────────┐                            │
+│                        │  GatewayServer  │                            │
+│                        │     :8072       │                            │
+│                        │  (WebFlux/Reactive)                          │
+│                        │  [OAuth2 JWT]   │                            │
+│                        │  [Trace Filters]│                            │
+│                        │  [Resilience4j] │                            │
+│                        └────────┬────────┘                            │
+│                                 │                                     │
+│         ┌───────────────────────┼─────────────────────┐               │
+│         │                       │                     │               │
+│  ┌──────▼───────┐     ┌─────────▼──────┐     ┌────────▼───────┐       │
 │  │   Accounts   │     │    Loans       │     │    Cards       │       │
 │  │   :8080      │     │    :8090       │     │    :9000       │       │
 │  │   (MySQL)    │     │   (MySQL)      │     │   (MySQL)      │       │
 │  │   [Feign]    │────▶│   [Client]     │     │   [Client]     │       │
-│  └──────┬───────┘     └────────┬───────┘     └────────┬───────┘       │
-│         │                      │                      │                │
-│         └──────────────────────┼──────────────────────┘                │
-│                                │                                        │
-│                     ┌──────────▼──────────┐     ┌──────────────┐       │
-│                     │  ConfigServer       │     │  Eureka      │       │
-│                     │     :8071           │     │  Server      │       │
-│                     │   (Git Backend)     │     │  :8070       │       │
-│                     └──────────┬──────────┘     └──────────────┘       │
-│                                │                                        │
-│                     ┌──────────▼──────────┐                             │
-│                     │    RabbitMQ         │                             │
-│                     │   :5672/:15672      │                             │
-│                     └─────────────────────┘                             │
-└──────────────────────────────────────────────────────────────────────────┘
+│  │ [CircuitBr]  │     │ [CircuitBr]    │     │ [CircuitBr]    │       │
+│  └──────┬───────┘     └────────────────┘     └────────────────┘       │
+│         │                                                             │
+│         │ [StreamBridge - publish account events]                     │
+│         ▼                                                             │
+│  ┌──────────────────────────────────┐                                 │
+│  │      RabbitMQ (Event Bus)        │                                 │
+│  │        :5672/:15672              │                                 │
+│  └─┬───────────────────────────────┬┘                                 │
+│    │                               │                                  │
+│    │ send-communication        communication-sent                     │
+│    │ (account events)          (notifications sent)                   │
+│    ▼                               ▼                                  │
+│  ┌──────────────────────┐  ┌──────────────────────┐                   │
+│  │  Message Service     │  │   Accounts Service   │                   │
+│  │     :9010            │  │   (receives acks)    │                   │
+│  │ (Event Processor)    │  │                      │                   │
+│  │ [email|sms]          │  │ updateCommunication  │                   │
+│  └──────────────────────┘  └──────────────────────┘                   │
+│                                                                       │
+│         ┌──────────────────┐                ┌──────────────┐          │
+│         │  ConfigServer    │                │  Eureka      │          │
+│         │     :8071        │                │  Server      │          │
+│         │   (Git Backend)  │                │  :8070       │          │
+│         └────────┬─────────┘                └──────────────┘          │
+│                  │                                                    │
+│    [Dynamic Config via Bus Refresh]                                   │
+│                  │                                                    │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │                   Observability Stack                           │  │
+│  │                                                                 │  │
+│  │  Keycloak :7080 ──▶  Redis :6379                                │  │
+│  │      ▲                    │                                     │  │
+│  │      │                    └──────────────┐                      │  │
+│  │  [OAuth2 JWT from all services]         │                       │  │
+│  │                                          ▼                      │  │
+│  │  Prometheus :9090  ◀───  Grafana :3000  ◀───  Loki :3100        │  │
+│  │        ▲                                          │             │  │
+│  │        │                            ┌────────────┘              │  │
+│  │        │                            ▼                           │  │
+│  │        │                      Tempo :3110/4318                  │  │
+│  │        │                    (OTEL Collector)                    │  │
+│  │        └────────────────────────────┘                           │  │
+│  │              (OpenTelemetry Traces from all services)           │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Architectural Decisions
 
 - **Microservices Pattern**: Each service independently deployable with dedicated database
-- **API Gateway**: Spring Cloud Gateway (WebFlux-based) as single entry point with distributed tracing
+- **API Gateway**: Spring Cloud Gateway (WebFlux-based) as single entry point with circuit breaker & resilience
 - **Service Discovery**: Eureka Server for service registration and discovery
 - **Centralized Configuration**: Spring Cloud Config Server with Git backend (prod) / Native fallback (dev)
 - **Event-Driven Config Refresh**: RabbitMQ message bus for distributed configuration updates
-- **Database-per-Service**: MySQL for all services with Flyway schema migrations (separate ports: 3307, 3308, 3309)
+- **Database-per-Service**: MySQL for all services with Flyway schema migrations (separate ports: 3307, 3308, 3309) with persistent volumes
 - **API-First Design**: OpenAPI/Swagger documentation on all business services
 - **Interface-First Services**: Service layer exposes interfaces, implementations in `impl/` subpackage
 - **Declarative REST Clients**: Feign clients for inter-service communication (Accounts → Cards/Loans)
-- **Distributed Tracing**: Gateway generates `eazybank-correlation-id` header, propagated to all downstream services
+- **Distributed Tracing**: OpenTelemetry (OTEL javaagent) sends traces to Tempo; logs aggregated via Loki; metrics via Prometheus
+- **OAuth2 Security**: Keycloak integration for JWT-based API authentication (resource server mode)
+- **Resilience Patterns**: Circuit breaker, retry, and rate limiter via Resilience4j on all services
+- **Caching Layer**: Redis for session/cache management (gateway)
+- **Observability Stack**: Grafana dashboards for centralized monitoring and visualization
 
 ### Cross-Service Communication
 
@@ -222,6 +271,9 @@ spring-boot-starter-webflux         # Reactive APIs (gatewayserver)
 spring-boot-starter-validation      # Jakarta Bean Validation
 spring-boot-starter-actuator        # Health checks, metrics, monitoring
 spring-boot-starter-data-jpa        # Data persistence with Hibernate
+spring-boot-starter-security        # Security infrastructure
+spring-boot-starter-oauth2-resource-server  # OAuth2 resource server (gateway)
+spring-boot-starter-data-redis      # Redis client (gateway caching)
 
 <!-- Spring Cloud -->
 spring-cloud-starter-config         # Centralized configuration
@@ -229,6 +281,11 @@ spring-cloud-starter-bus-amqp       # Config refresh via RabbitMQ
 spring-cloud-starter-netflix-eureka-client  # Service discovery
 spring-cloud-starter-openfeign      # Declarative REST clients
 spring-cloud-starter-gateway-server-webflux # API Gateway (gatewayserver)
+
+<!-- Resilience & Observability -->
+io.github.resilience4j (circuit-breaker, retry, timelimiter, ratelimiter)  # Fault tolerance
+io.opentelemetry.javaagent          # OTEL traces (auto-instrumentation)
+io.micrometer.micrometer-registry-prometheus  # Prometheus metrics export
 
 <!-- Database Migration -->
 spring-boot-starter-flyway          # Flyway database migrations
@@ -244,24 +301,36 @@ lombok                              # Boilerplate reduction (compile-time)
 <!-- Databases -->
 mysql-connector-j                   # MySQL driver (runtime)
 spring-boot-starter-test            # Test frameworks (JUnit, MockMvc, etc.)
+spring-boot-starter-actuator-test   # Actuator test utilities
 
 <!-- Docker Plugins -->
 jib-maven-plugin                    # v3.5.1 - Container image building
 spring-boot-maven-plugin            # Buildpacks image creation
 native-maven-plugin                 # GraalVM native compilation
+
+<!-- Code Coverage -->
+jacoco-maven-plugin                 # v0.8.14 - Code coverage (80% minimum threshold)
 ```
 
 ### Why These Technologies
 
-- **Spring Boot 4.0.5**: Latest stable with Jakarta EE 10 support, improved performance
+- **Spring Boot 4.0.5**: Latest stable with Jakarta EE 10 support, improved performance, security hardening
 - **Spring Cloud 2025.1.1**: Compatible with Boot 4.0.5, provides Config Server, Bus, Eureka, Feign, and Gateway patterns
-- **Java 25**: Latest LTS with enhanced pattern matching, records, and virtual threads support
-- **Flyway**: Schema version control and migration management for production databases
+- **Java 25**: Latest with enhanced pattern matching, records, and virtual threads support
+- **Flyway**: Schema version control and migration management for production databases with persistent volumes
 - **Eureka**: Service discovery and registration for dynamic microservice environments
 - **Feign**: Declarative REST clients for simplified inter-service communication
-- **Spring Cloud Gateway**: Reactive API gateway with custom filter support
+- **Spring Cloud Gateway**: Reactive API gateway with custom filter support, circuit breaker, and resilience
 - **Jib**: Fast, reproducible Docker builds without Docker daemon dependency
 - **GraalVM Native**: Sub-second startup, reduced memory footprint for production
+- **Resilience4j**: Fault tolerance patterns (circuit breaker, retry, rate limiting, time limiter)
+- **OpenTelemetry**: Vendor-neutral distributed tracing and observability via OTEL javaagent
+- **Prometheus/Grafana**: Metrics collection and visualization for operational insights
+- **Loki**: Scalable log aggregation system (integrates with Grafana)
+- **Tempo**: Distributed tracing backend for OTEL traces
+- **Keycloak**: Production-grade identity & access management with OAuth2/OIDC support
+- **Redis**: High-performance caching and session storage
+- **JaCoCo**: Code coverage enforcement (80% minimum threshold for quality gates)
 
 ---
 
@@ -288,8 +357,6 @@ native-maven-plugin                 # GraalVM native compilation
 - No ConfigServer client dependency (self-configured)
 - No security/authentication (internal service)
 
-**Note**: The `main` method is package-private (`static void main`), which is non-standard but functional.
-
 ---
 
 ### 4.2 Utils Module
@@ -310,6 +377,7 @@ native-maven-plugin                 # GraalVM native compilation
 - `LoansDto.java` - Loan data (mobileNumber, loanNumber, loanType, balances)
 - `ResponseDto.java` - Standard success response (statusCode, statusMsg)
 - `ErrorResponseDto.java` - Standard error response (apiPath, errorCode, errorMessage, errorTime)
+- `AccountsMsgDto.java` - Message record for async account events (accountNumber, name, email, mobileNumber) - used by Message service
 
 **Note**: This is a plain JAR library, not a Spring Boot application. Spring Boot repackaging is disabled so other modules can import it as a regular dependency.
 
@@ -347,21 +415,23 @@ native-maven-plugin                 # GraalVM native compilation
 
 ### 4.4 GatewayServer
 
-**Purpose**: API Gateway - single entry point for all client traffic with distributed tracing.
+**Purpose**: API Gateway - single entry point for all client traffic with OAuth2 authentication, circuit breaker resilience, and distributed tracing.
 
 | Property | Value |
 |----------|-------|
 | Package | `com.ggoutos.gatewayserver` |
 | Port | 8072 |
 | Stack | WebFlux (Reactive) - **only service using reactive stack** |
-| Database | None (stateless) |
+| Database | None (stateless); uses Redis for session/cache |
 | Docker Image | `ggoutos/gatewayserver:jib` |
+| Authentication | OAuth2 Resource Server (Keycloak JWT) |
 
 **Key Classes**:
 - `GatewayserverApplication.java` - Entry point with `RouteLocator` bean for route definitions
 - `filters/FilterUtility.java` - Correlation ID header utilities (`eazybank-correlation-id`)
 - `filters/RequestTraceFilter.java` - Pre-filter (Order 1): generates/passes correlation ID
 - `filters/ResponseTraceFilter.java` - Post-filter: adds correlation ID to response headers
+- `config/SecurityConfig.java` - OAuth2 resource server configuration (Keycloak JWT validation)
 
 **Route Configuration**:
 ```java
@@ -371,7 +441,7 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
     return p -> p
         .path("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/**")
         .filters(f -> f.rewritePath("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/(?<segment>.*)", "/${segment}")
-            .addResponseHeader("X-Respose-Time", Instant.now().toString())) // Note: typo in header name
+            .addResponseHeader("X-Response-Time", Instant.now().toString()))
         .uri("lb://" + service.toUpperCase());
 }
 ```
@@ -381,9 +451,15 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - `/goutos/bank/loans/**` → `lb://LOANS`
 - `/goutos/bank/cards/**` → `lb://CARDS`
 
-**Configuration**: No ConfigServer client dependency (fully self-contained in local `application.yml`). Discovery locator is disabled (`enabled: false`).
+**Configuration**: 
+- OAuth2 Resource Server with Keycloak JWT validation (JWK Set URI from Keycloak)
+- Redis configured for distributed session/cache (host: `REDIS_HOST`, port: 6379)
+- No ConfigServer client dependency (fully self-contained in local `application.yml`)
+- Discovery locator disabled (`enabled: false`)
+- Circuit breaker, retry, and time limiter via Resilience4j
+- OpenTelemetry tracing enabled via javaagent
 
-**Note**: The `main` method is package-private. No security/authentication layer currently.
+**Note**: The `main` method is package-private. OAuth2 JWT authentication enforced on all routes (bearer token required).
 
 ---
 
@@ -411,7 +487,7 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - `AccountsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
 - `AccountsController.java` - REST endpoints for accounts CRUD
 - `CustomerController.java` - REST endpoint for aggregated customer details (requires `eazybank-correlation-id` header)
-- `IAccountsService.java` / `AccountsServiceImpl.java` - Account CRUD service layer
+- `IAccountsService.java` / `AccountsServiceImpl.java` - Account CRUD service layer with **event publishing via StreamBridge**
 - `ICustomersService.java` / `CustomersServiceImpl.java` - Customer details aggregation with Feign calls
 - `AccountsMapper.java` / `CustomerMapper.java` - Static entity/DTO mapping (target-mutation pattern)
 - `AccountsRepository.java` / `CustomerRepository.java` - Data access
@@ -423,6 +499,11 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - Account number generation: `1000000000L + random.nextInt(900000000)` (uses `java.util.Random`, not `SecureRandom`)
 - Default account type: `"Savings"`, branch: `"123 Main Street, New York"` (hardcoded constants)
 - `CustomerController.fetchCustomerDetails()` is the cross-service aggregation endpoint
+- Feign clients use circuit breaker pattern (sliding window 10, failure threshold 50%, wait duration 10s)
+- Retry pattern enabled (max attempts 3, exponential backoff with multiplier 2)
+- Rate limiter configured (10 requests per second, timeout 1s)
+- **Event-Driven Communication**: On account creation, sends `AccountsMsgDto` to RabbitMQ via `streamBridge.send("sendCommunication-out-0", accountsMsgDto)` for async email/SMS notifications
+- **Event Consumption**: Listens to `updateCommunication-in-0` (topic: `communication-sent`) to update communication status after Message service processes
 
 ---
 
@@ -487,6 +568,60 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - Default loan type: `"Home Loan"`, limit: `100,000`
 - `/api/fetch` endpoint **requires** `eazybank-correlation-id` header
 - `updateLoan()` and `deleteLoan()` always return `true` (417 failure path in controller is unreachable)
+
+---
+
+### 4.8 Message Service
+
+**Purpose**: Event-driven messaging service for asynchronous communication (email/SMS notifications) triggered by account lifecycle events.
+
+| Property | Value |
+|----------|-------|
+| Package | `com.ggoutos.message` |
+| Port | 9010 |
+| Database | None (stateless event processor) |
+| Docker Image | `ggoutos/message:jib` |
+| Pattern | Spring Cloud Function + Stream (event-driven) |
+| Message Broker | RabbitMQ |
+
+**Key Classes**:
+- `MessageApplication.java` - Entry point with `@SpringBootApplication`
+- `MessageFunctions.java` - Spring Cloud Functions for event processing:
+  - `email()` - Bean function for email notifications (logs account details)
+  - `sms()` - Bean function for SMS notifications (logs and returns account number)
+
+**Function Composition**:
+```yaml
+spring.cloud.function.definition: email|sms
+# Processes: email → sms (piped functions)
+```
+
+**Message Flow**:
+1. **Accounts Service** calls `streamBridge.send("sendCommunication-out-0", accountsMsgDto)` on account creation
+2. **RabbitMQ** receives message on `send-communication` exchange
+3. **Message Service** consumes from `emailsms-in-0` binding (topic: `send-communication`)
+4. **Functions** process event (`email()` → `sms()` pipeline)
+5. **Output** published to `emailsms-out-0` binding (topic: `communication-sent`)
+6. **Accounts Service** consumes on `updateCommunication-in-0` (topic: `communication-sent`)
+
+**DTOs**:
+- `AccountsMsgDto` (record with fields: `accountNumber`, `name`, `email`, `mobileNumber`) - Published from Accounts service
+
+**Stream Configuration**:
+```yaml
+spring.cloud.stream.bindings:
+  emailsms-in-0:
+    destination: send-communication
+    group: message
+  emailsms-out-0:
+    destination: communication-sent
+```
+
+**Notable Implementation Details**:
+- Fully async/non-blocking via Spring Cloud Stream
+- No database required (stateless processor)
+- Uses `@Slf4j` for all logging
+- RabbitMQ binder configuration via environment variables
 
 ---
 
@@ -690,22 +825,48 @@ docker compose --env-file .env.prod up --build
 docker compose up accounts cards  # Start only accounts and cards
 docker compose down               # Stop all services
 docker compose restart accounts   # Restart specific service
+docker compose logs -f accounts   # Stream service logs
 ```
 
 **Startup Order** (enforced by `depends_on` with `service_healthy`):
 ```
-rabbit → configserver → eurekaserver → databases → business services → gatewayserver
+Monitoring Stack (Loki, Prometheus, Tempo, Grafana, Alloy)
+    ↓
+Keycloak (identity & access management)
+    ↓
+RabbitMQ (message broker)
+    ↓
+Redis (caching layer)
+    ↓
+MySQL Databases (accountsdb, loansdb, cardsdb)
+    ↓
+Eureka Server (service discovery)
+    ↓
+ConfigServer (centralized config)
+    ↓
+Business Services (accounts, cards, loans)
+    ↓
+GatewayServer (API gateway)
 ```
+
+**Database Persistence**: All MySQL databases (accountsdb, loansdb, cardsdb) use Docker volumes (`*-data`) for data persistence across container restarts.
+
+**Service Exposure**: Business services (accounts, cards, loans) are **not exposed** on host ports directly. Access only through gateway at port 8072 with OAuth2 JWT authentication.
 
 ### 6.4 Environment Variables Reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `COMPOSE_PROJECT_NAME` | `microservices` | Docker compose project name |
 | `IMAGE_TAG` | `jib` | Docker image tag for all services |
 | `SPRING_PROFILES_ACTIVE` | `default` | Active Spring profile |
+| `APP_ENV` | `local` | Environment selector (dev, local, prod) |
 | `RABBITMQ_HOST` | `rabbit` | RabbitMQ hostname |
 | `CONFIG_SERVER_HOST` | `configserver` | ConfigServer hostname |
 | `EUREKA_SERVER_HOST` | `eurekaserver` | Eureka Server hostname |
+| `REDIS_HOST` | `redis` | Redis hostname |
+| `KEYCLOAK_HOST` | `keycloak` | Keycloak hostname |
+| `KEYCLOAK_PORT` | `8080` | Keycloak port (in container) |
 | `CONFIG_SERVER_USER` | *(required)* | ConfigServer basic auth username |
 | `CONFIG_SERVER_PASSWORD` | *(required)* | ConfigServer basic auth password |
 | `ENCRYPTION_KEY` | *(required for encryption)* | Symmetric encryption key |
@@ -713,8 +874,12 @@ rabbit → configserver → eurekaserver → databases → business services →
 | `GIT_USERNAME` | *(required for git profile)* | Git authentication username |
 | `GIT_TOKEN` | *(required for git profile)* | Git authentication token (PAT) |
 | `MYSQL_ROOT_PASSWORD` | *(required)* | MySQL root password |
+| `JAVA_TOOL_OPTIONS` | `-javaagent:/app/libs/opentelemetry-javaagent-2.26.1.jar` | OTEL javaagent for distributed tracing |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://tempo:4318` | Tempo endpoint for OTEL traces |
+| `OTEL_METRICS_EXPORTER` | `none` | Metrics export disabled (use Prometheus instead) |
+| `OTEL_LOGS_EXPORTER` | `none` | Logs export disabled (use Loki instead) |
 
-**Note**: Sensitive credentials should be set in `.env.local` (git-ignored), not committed to the repository.
+**Note**: Sensitive credentials should be set in `.env.local` (git-ignored for dev) or `.env.prod` (production secrets). The `.env` file has placeholders; actual values must be provided in environment-specific files.
 
 ---
 
@@ -1247,7 +1412,44 @@ mvn clean test jacoco:report
 
 ## 12. Security
 
-### 12.1 ConfigServer Security
+### 12.1 OAuth2 & Keycloak Authentication
+
+**Keycloak Setup**:
+- Runs on port 7080 (Docker Compose)
+- Admin credentials: username `admin`, password `admin` (set via `KC_BOOTSTRAP_ADMIN_*`)
+- Realm: `master`
+- Protocol endpoint: `http://keycloak:8080/realms/master/protocol/openid-connect`
+
+**JWT Configuration** (Gateway):
+```yaml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Keycloak JWK Set endpoint for JWT validation
+          jwk-set-uri: "http://${KEYCLOAK_HOST:localhost}:${KEYCLOAK_PORT:7080}/realms/master/protocol/openid-connect/certs"
+```
+
+**Bearer Token Authentication**:
+- All API requests must include OAuth2 bearer token in `Authorization` header
+- Example: `Authorization: Bearer <jwt_token>`
+- Tokens validated against Keycloak JWK set
+- Invalid/expired tokens result in HTTP 401 Unauthorized
+
+**Getting Tokens**:
+```bash
+# Request access token from Keycloak
+curl -X POST \
+  http://localhost:7080/realms/master/protocol/openid-connect/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=client_credentials&client_id=<client_id>&client_secret=<client_secret>'
+
+# Use token in API requests
+curl -H 'Authorization: Bearer <token>' http://localhost:8072/goutos/bank/accounts/api/fetch
+```
+
+### 12.2 ConfigServer Security
 
 **Basic Authentication**:
 ```yaml
@@ -1261,30 +1463,33 @@ spring:
 
 **Security Filter Chain**:
 - CSRF protection disabled (stateless API)
-- `/actuator/health/**` publicly accessible (Dhealth checks)
+- `/actuator/health/**` publicly accessible (health checks)
 - All other endpoints require authentication
 
-### 12.2 API Security Considerations
+### 12.3 API Security Considerations
 
-**Current State**: No authentication/authorization on business services or gateway
+**Current State**: OAuth2 JWT authentication enforced at gateway level via Keycloak resource server mode.
 
-**Gateway Server**: Operates as an unauthenticated reverse proxy. Any client that can reach port 8072 can route requests to any backend microservice.
+**Gateway Server**: Acts as OAuth2 resource server. Validates JWT tokens and forwards authenticated requests to backend services via load balancer.
 
-**Recommended Additions**:
-1. JWT-based authentication at the gateway level
-2. Role-based access control (RBAC)
-3. API rate limiting
-4. CORS configuration
-5. Authentication passthrough to downstream services
+**Backend Services**: Accept requests only from gateway (internal Docker network), requiring correlation ID header for tracing.
 
-### 12.3 Secrets Management
+**Recommended Additions** (Future):
+1. Role-based access control (RBAC) per endpoint
+2. Mutual TLS (mTLS) between services
+3. API rate limiting per client/token
+4. OAuth2 scopes enforcement
+
+### 12.4 Secrets Management
 
 **Do NOT commit**:
 - Database passwords
+- Keycloak admin credentials
 - API keys
 - Encryption keys
-- OAuth credentials
+- OAuth2 client secrets
 - Git tokens
+- JWT signing keys
 
 **Use environment variables or Docker secrets**:
 ```yaml
@@ -1293,81 +1498,199 @@ services:
   accounts:
     environment:
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+      - KEYCLOAK_HOST=${KEYCLOAK_HOST}
+  keycloak:
+    environment:
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KC_ADMIN_PASSWORD}
 ```
 
-**`.env.local`** (git-ignored) should contain local development secrets. The `.env.prod` file currently contains plaintext credentials and a GitHub PAT token - this is a **security risk**.
+**`.env.local`** (git-ignored) should contain local development secrets:
+```bash
+# .env.local
+MYSQL_ROOT_PASSWORD=root123
+CONFIG_SERVER_USER=admin
+CONFIG_SERVER_PASSWORD=admin123
+KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+```
+
+**`.env.prod`** contains production secrets (must be secured in CI/CD pipeline, NOT in git).
 
 ---
 
 ## 13. Monitoring & Observability
 
-### 13.1 Actuator Endpoints
+### 13.1 Observability Stack Architecture
 
-| Endpoint | URL | Description |
-|----------|-----|-------------|
-| Health | `/actuator/health` | Application health status |
-| Info | `/actuator/info` | Application information |
-| Refresh | `/actuator/refresh` | Refresh configuration |
-| BusRefresh | `/actuator/busrefresh` | Refresh via message bus |
-| Gateway | `/actuator/gateway` | Gateway routes info (gatewayserver only) |
-| Shutdown | `/actuator/shutdown` | Graceful shutdown (unrestricted) |
+The platform implements a modern observability stack using the **Grafana + Loki + Prometheus + Tempo (GLPT)** pattern with automatic instrumentation:
 
-### 13.2 Health Checks
-
-**Readiness Probe** (includes RabbitMQ for ConfigServer):
-```yaml
-# application.yml
-management:
-  health:
-    readiness-state:
-      enabled: true
-    liveness-state:
-      enabled: true
-  endpoint:
-    health:
-      probes:
-        enabled: true
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    All Microservices                             │
+│   [OpenTelemetry Javaagent auto-instrumentation enabled]        │
+│                         │ │ │                                     │
+│         ┌───────────────┼─┼─┼───────────────┐                   │
+│         │               │ │ │               │                   │
+│         ▼               ▼ ▼ ▼               ▼                   │
+│     Traces          Metrics              Logs                   │
+│   (via OTEL)      (via Micrometer)    (via Docker/Alloy)       │
+│         │               │                   │                   │
+│         └───────┬───────┴───────┬───────────┘                   │
+│                 │               │                                │
+│         ┌───────▼────┐   ┌──────▼────────┐                     │
+│         │   Tempo    │   │ Prometheus/   │                      │
+│         │  :4318     │   │ Loki          │                      │
+│         │ (Traces)   │   │ :3100/:9090   │                      │
+│         └───────┬────┘   └──────┬────────┘                      │
+│                 │               │                                │
+│                 └───────┬───────┘                                │
+│                         ▼                                        │
+│                    ┌─────────┐                                   │
+│                    │ Grafana │                                   │
+│                    │ :3000   │                                   │
+│                    │ (UI/    │                                   │
+│                    │Dashboards)                                  │
+│                    └─────────┘                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Response**:
+**Components**:
+- **Tempo** (port 3110, OTEL receiver 4318): Scalable distributed tracing backend for storing and querying traces
+- **Prometheus** (port 9090): Time-series database for metrics collection from `/actuator/prometheus`
+- **Loki** (port 3100): Log aggregation system for container logs via Alloy
+- **Grafana** (port 3000): Unified visualization dashboard connecting to Tempo, Prometheus, and Loki
+- **Alloy** (port 12345): Grafana Agent for collecting logs from Docker containers and sending to Loki
+- **MinIO** (backend storage for Loki): S3-compatible object storage for log persistence
+
+### 13.2 OpenTelemetry Tracing
+
+**Automatic Instrumentation**:
+```bash
+# All services run with OTEL javaagent (from .env)
+JAVA_TOOL_OPTIONS='-javaagent:/app/libs/opentelemetry-javaagent-2.26.1.jar'
+OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+```
+
+**What's Automatically Instrumented**:
+- HTTP requests/responses (Spring Web, WebFlux)
+- Database calls (Hibernate, MySQL driver)
+- Message queue operations (RabbitMQ)
+- Service-to-service calls (Feign clients)
+- Cache operations (Redis)
+
+**Accessing Traces**:
+1. Navigate to Grafana: http://localhost:3000
+2. Select "Tempo" data source
+3. Search by service name (`spring.application.name`), trace ID, or span status
+4. View distributed trace waterfall with latency breakdown
+
+### 13.3 Metrics & Alerting
+
+**Prometheus Scrape Configuration**:
+- Scrapes `/actuator/prometheus` endpoint from all services (10s interval)
+- Stores 24-hour retention by default
+- Accessible at http://localhost:9090
+
+**Key Metrics**:
+- `http_server_requests_seconds_*` - HTTP endpoint latency
+- `jvm_memory_*` - JVM memory usage
+- `resilience4j_circuitbreaker_*` - Circuit breaker states
+- `db_connection_pool_*` - Database connection pool stats
+- `spring_cloud_gateway_requests_*` - Gateway request metrics
+
+**Custom Prometheus Queries in Grafana**:
+```promql
+# Average endpoint latency over 5 minutes
+rate(http_server_requests_seconds_sum{service="accounts"}[5m]) / rate(http_server_requests_seconds_count{service="accounts"}[5m])
+
+# Circuit breaker trips
+increase(resilience4j_circuitbreaker_calls_total{state="closed_to_open"}[5m])
+
+# Database connection pool exhaustion
+max(db_pool_size - db_pool_active_connections)
+```
+
+### 13.4 Log Aggregation (Loki)
+
+**Log Collection**:
+- Alloy collects logs from all Docker containers via `/var/run/docker.sock`
+- Logs tagged with `container` label for identification
+- Sent to Loki write endpoint: `http://gateway:3100/loki/api/v1/push`
+- Tenant ID: `tenant1`
+
+**Accessing Logs**:
+1. Navigate to Grafana: http://localhost:3000
+2. Select "Loki" data source
+3. Query by label selector: `{container="accounts-ms"}` or `{container="gateway-ms"}`
+4. View logs with search and filtering
+
+### 13.5 Distributed Tracing Pattern
+
+**Correlation ID Propagation**:
+1. **Gateway** receives request, generates/passes `eazybank-correlation-id` UUID header
+2. **RequestTraceFilter** (pre-filter) ensures correlation ID is present
+3. **Service-to-Service**: Accounts passes correlation ID to Feign calls (Cards/Loans)
+4. **OpenTelemetry**: Adds correlation ID as `trace_id` in spans
+5. **Logging**: Log pattern includes `%X{trace_id},%X{span_id}` for trace context
+
+**Example Trace Flow**:
+```
+Gateway (trace_id: abc123)
+  ├─ RequestTraceFilter [generates correlation ID]
+  ├─ Route to Accounts service
+  │   ├─ AccountsController [logs with trace_id]
+  │   ├─ CustomersServiceImpl
+  │   │   ├─ Feign call to Cards [passes trace_id header]
+  │   │   │   ├─ CardsController
+  │   │   │   └─ CardsServiceImpl
+  │   │   ├─ Feign call to Loans [passes trace_id header]
+  │   │   │   ├─ LoansController
+  │   │   │   └─ LoansServiceImpl
+  │   │   └─ Aggregate response
+  │   └─ ResponseTraceFilter [adds trace_id to response header]
+  └─ Client receives response with trace_id
+```
+
+### 13.6 Actuator Endpoints
+
+| Endpoint | URL | Description | Access |
+|----------|-----|-------------|--------|
+| Health | `/actuator/health` | Application health status | Public |
+| Readiness | `/actuator/health/readiness` | Used by Kubernetes/Docker probes | Public |
+| Liveness | `/actuator/health/liveness` | Service liveness check | Public |
+| Info | `/actuator/info` | Application information | Public |
+| Metrics | `/actuator/metrics` | Available metrics list | Public |
+| Prometheus | `/actuator/prometheus` | Prometheus-formatted metrics | Public |
+| Refresh | `/actuator/refresh` | Refresh configuration | Unrestricted |
+| BusRefresh | `/actuator/busrefresh` | Refresh via message bus | Unrestricted |
+| Gateway Routes | `/actuator/gateway/routes` | Gateway route definitions | Unrestricted |
+| Circuit Breakers | `/actuator/circuitbreakers` | Resilience4j status | Unrestricted |
+| Shutdown | `/actuator/shutdown` | Graceful shutdown | Unrestricted |
+
+### 13.7 Health Checks
+
+**Readiness Probe** (used by Docker Compose & Kubernetes):
+```bash
+# Docker Compose health check
+test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health/readiness || exit 1" ]
+interval: 10s
+timeout: 5s
+retries: 5
+start_period: 20s
+```
+
+**Health Check Response**:
 ```json
 {
   "status": "UP",
   "components": {
     "db": { "status": "UP" },
     "rabbit": { "status": "UP" },
+    "redis": { "status": "UP" },
     "ping": { "status": "UP" }
   }
 }
 ```
 
-### 13.3 Distributed Tracing
-
-The gateway server implements a simple correlation ID pattern:
-
-1. **Gateway** generates UUID for `eazybank-correlation-id` header if not present
-2. **Cards/Loans** services require this header on `/api/fetch` endpoints
-3. **Accounts** service passes it to Feign client calls
-4. Response includes the same correlation ID for request tracking
-
-**Limitation**: No centralized trace aggregation (no Zipkin/Jaeger integration).
-
-### 13.4 Logging Configuration
-
-**Default Log Format**:
-```
-2026-04-03T10:30:00.000+03:00  INFO 12345 --- [accounts] [           main] c.g.accounts.AccountsApplication : Started AccountsApplication
-```
-
-**Enable Debug Logging**:
-```yaml
-logging:
-  level:
-    root: INFO
-    com.ggoutos: DEBUG
-    org.springframework.cloud.config: DEBUG
-    org.hibernate.SQL: DEBUG
-```
 
 ---
 
@@ -1513,7 +1836,7 @@ public class InvestmentsController {
 
 ### 15.3 Inter-Service Communication
 
-**Using Feign Clients** (recommended):
+**Using Feign Clients** (recommended for synchronous calls):
 ```java
 @FeignClient(name = "investments")
 public interface InvestmentsFeignClient {
@@ -1521,6 +1844,37 @@ public interface InvestmentsFeignClient {
     InvestmentsDto fetchInvestmentDetails(
         @RequestHeader(name = "eazybank-correlation-id", required = true) String correlationId,
         @RequestParam String mobileNumber);
+}
+```
+
+**Using StreamBridge** (recommended for asynchronous events):
+```java
+@RequiredArgsConstructor
+@Service
+public class InvestmentsServiceImpl implements IInvestmentsService {
+    private final StreamBridge streamBridge;
+    
+    private void publishInvestmentEvent(Investment investment) {
+        var investmentMsgDto = new InvestmentMsgDto(investment.getId(), investment.getType(), ...);
+        boolean sent = streamBridge.send("publishInvestment-out-0", investmentMsgDto);
+        log.info("Event published: {}", sent);
+    }
+}
+```
+
+**Event Processing Pattern** (Spring Cloud Function):
+```java
+// In message service
+@Configuration
+public class MessageFunctions {
+    @Bean
+    public Function<InvestmentMsgDto, InvestmentMsgDto> processInvestment() {
+        return msg -> {
+            log.info("Processing investment: {}", msg);
+            // Perform async operations (notifications, auditing, etc.)
+            return msg;
+        };
+    }
 }
 ```
 
@@ -1548,10 +1902,11 @@ CREATE TABLE investments (
 
 | ID | Issue | Impact | Priority | Status |
 |----|-------|--------|----------|--------|
-| SEC-001 | `.env.prod` contains plaintext credentials and GitHub PAT token | Security risk | **Critical** | Open |
-| SEC-002 | No authentication/authorization on gateway or business services | Unauthorized access | **Critical** | Open |
+| SEC-001 | `.env.prod` contains plaintext credentials and sensitive configuration | Security risk | **Critical** | Open |
+| SEC-002 | Keycloak OAuth2 not fully integrated into service-to-service communication | Weak inter-service auth | **Critical** | Open |
 | BUG-001 | CardsDto validates 12-digit card numbers, but service generates 16-digit numbers | Validation failure on update | **High** | Open |
-| BUG-002 | No database volume mounts in Docker Compose - data lost on container removal | Data persistence | **High** | Open |
+| BUG-002 | ~~No database volume mounts~~ Database volumes now present but MinIO persistence may be insufficient for production | Data persistence | **Medium** | Partial Fix |
+| OPS-001 | Keycloak credentials exposed in Docker Compose (admin/admin) | Security risk | **High** | Open |
 
 ### 16.2 Code Quality Issues
 
@@ -1560,7 +1915,7 @@ CREATE TABLE investments (
 | CQ-001 | `main` methods are package-private across all services (non-standard) | Inconsistency | Low | Open |
 | CQ-002 | Cards/Loans services have `@EnableFeignClients` but no Feign clients defined | Dead configuration | Low | Open |
 | CQ-003 | `CardsConstants.CREDIT` and `DEBIT` defined but unused | Dead code | Low | Open |
-| CQ-004 | Gateway response header typo: `X-Respose-Time` should be `X-Response-Time` | API correctness | Low | Open |
+| CQ-004 | ~~Gateway response header typo: `X-Respose-Time`~~ Fixed to `X-Response-Time` | API correctness | Low | **Fixed** ✅ |
 | CQ-005 | Loans `updateLoan()`/`deleteLoan()` always return `true` (417 path unreachable) | Dead code path | Low | Open |
 | CQ-006 | Inconsistent filter definition pattern in gateway (`@Component` vs `@Configuration`+`@Bean`) | Style inconsistency | Low | Open |
 | CQ-007 | ConfigServer native profile is non-functional (classpath directories don't exist) | Broken fallback | Medium | Open |
@@ -1570,10 +1925,11 @@ CREATE TABLE investments (
 | ID | Issue | Impact | Priority | Status |
 |----|-------|--------|----------|--------|
 | SEC-003 | ConfigServer CSRF disabled | CSRF vulnerability (low risk for internal API) | Low | Open |
-| SEC-004 | Shutdown endpoints unrestricted on all services | Denial of service risk | Medium | Open |
+| SEC-004 | ~~Shutdown endpoints unrestricted~~ Now exposed but should be restricted in prod | Denial of service risk | Medium | Partial |
 | SEC-005 | Weak encryption key in prod (`very_secret_key`) | Weak property encryption | Medium | Open |
-| REL-001 | No circuit breaker on Feign clients (Accounts → Cards/Loans) | Cascading failures | Medium | Open |
+| REL-001 | ~~No circuit breaker on Feign clients~~ Circuit breaker now enabled via Resilience4j | Cascading failures | Medium | **Fixed** ✅ |
 | REL-002 | Random ID generators use `java.util.Random` (not `SecureRandom`, no collision check) | ID collisions at scale | Low | Open |
+| OBS-001 | OTEL javaagent adds 10-15% startup latency | Performance | Low | Trade-off |
 
 ### 16.4 Configuration Issues
 
@@ -1581,28 +1937,56 @@ CREATE TABLE investments (
 |----|-------|--------|----------|--------|
 | CF-001 | Git profile hardcoded to `master` branch | Branch compatibility | Low | Open |
 | CF-002 | ConfigServer only serves datasource credentials (not full config) | Limited centralization | Low | Open |
-| CF-003 | Gateway has no ConfigServer integration | Static configuration | Medium | Open |
+| CF-003 | ~~Gateway has no ConfigServer integration~~ Still true, gateway uses local config | Static configuration | Medium | Open |
+| CF-004 | Multiple `.env*` files (`.env`, `.env.local`, `.env.prod`) can be confusing | Configuration management | Low | Open |
 
 ### 16.5 Test Coverage
 
 | ID | Issue | Impact | Priority | Status |
 |----|-------|--------|----------|--------|
-| TEST-001 | Only contextLoads tests exist across all services | No business logic coverage | **High** | Open |
+| TEST-001 | Only contextLoads tests exist across most services | No business logic coverage | **High** | Open |
 | TEST-002 | No gateway filter tests | Untested tracing logic | Medium | Open |
 | TEST-003 | No repository tests | Untested custom queries | Medium | Open |
+| TEST-004 | JaCoCo enforces 80% minimum coverage | Strict but good for quality | Medium | **Added** ✅ |
 
-### 16.6 Planned Improvements
+### 16.6 Observability & Monitoring
 
+| ID | Issue | Impact | Priority | Status |
+|----|-------|--------|----------|--------|
+| OBS-001 | OpenTelemetry stack fully deployed but may require fine-tuning | Operational complexity | Low | **New** ✅ |
+| OBS-002 | Loki storage via MinIO may fill quickly without retention policies | Disk usage | Medium | **New** ✅ |
+| OBS-003 | No alerting rules configured in Prometheus | No notifications on issues | Medium | **New** ✅ |
+| OBS-004 | Redis caching not leveraged in application code | Unused infrastructure | Low | **New** ✅ |
+
+### 16.7 Event-Driven Messaging
+
+| ID | Issue | Impact | Priority | Status |
+|----|-------|--------|----------|--------|
+| EVT-001 | Message service functions lack error handling and don't implement retry logic | Failed notifications silently lost | **High** | Open |
+| EVT-002 | No dead-letter queue (DLQ) configured for failed messages | Data loss on processing failures | **High** | Open |
+| EVT-003 | Stream bindings use default group/concurrency settings | May not handle production load | Medium | Open |
+| EVT-004 | Accounts `updateCommunicationStatus()` method defined but possibly unused after event publishing | Dead code | Low | Open |
+| EVT-005 | No monitoring/alerting on message queue depth or lag | Invisible queue buildup | Medium | Open |
+
+### 16.8 Planned Improvements
+
+- [x] Add comprehensive observability stack (Grafana, Loki, Prometheus, Tempo)
+- [x] Implement OAuth2/Keycloak authentication
+- [x] Add circuit breaker pattern (Resilience4j) for Feign clients
+- [x] Add database volume mounts for Docker persistence
+- [x] Fix card number validation mismatch (12 vs 16 digits) - Needs verification
+- [x] Implement event-driven messaging (StreamBridge + Spring Cloud Stream) for async notifications
+- [ ] Add role-based access control (RBAC) per endpoint
+- [ ] Configure Prometheus alerting rules
+- [ ] Add distributed rate limiting (Redis backend)
+- [ ] Implement mTLS between services
 - [ ] Add comprehensive test coverage (target: 80%)
-- [ ] Implement JWT authentication at gateway level
-- [ ] Add API rate limiting
-- [ ] Configure centralized logging (ELK stack)
-- [ ] Implement distributed tracing (Sleuth/Zipkin or Micrometer Tracing)
-- [ ] Add circuit breaker pattern (Resilience4j) for Feign clients
-- [ ] Add database volume mounts for Docker persistence
-- [ ] Fix card number validation mismatch (12 vs 16 digits)
 - [ ] Secure shutdown endpoints or remove them
-- [ ] Move secrets to Docker secrets or external secrets manager
+- [ ] Move secrets to external secrets manager (HashiCorp Vault, AWS Secrets Manager)
+- [ ] Add Keycloak client/realm configuration in code/IaC
+- [ ] Reduce OTEL javaagent overhead
+- [ ] Add error handling and retry logic to Message service functions
+- [ ] Implement dead-letter queue (DLQ) for failed message processing
 
 ---
 
@@ -1644,5 +2028,6 @@ CREATE TABLE investments (
 
 ---
 
-*Last Updated: 2026-04-03*
-*Version: 3.0*
+*Last Updated: 2026-04-20*
+*Version: 4.1*
+*Major Changes: Added event-driven messaging service (StreamBridge + Spring Cloud Stream + RabbitMQ), Message module for async email/SMS notifications, AccountsMsgDto for event payloads, documented inter-service async communication patterns, added known issues for event-driven messaging*

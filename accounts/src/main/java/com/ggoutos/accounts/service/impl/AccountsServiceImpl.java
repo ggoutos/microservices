@@ -11,17 +11,22 @@ import com.ggoutos.accounts.repository.AccountsRepository;
 import com.ggoutos.accounts.repository.CustomerRepository;
 import com.ggoutos.accounts.service.IAccountsService;
 import com.ggoutos.utils.dto.AccountsDto;
+import com.ggoutos.utils.dto.AccountsMsgDto;
 import com.ggoutos.utils.dto.CustomerDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 import java.util.Random;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AccountsServiceImpl implements IAccountsService {
 
+    private final StreamBridge streamBridge;
     private final AccountsRepository accountsRepository;
     private final CustomerRepository customerRepository;
 
@@ -37,7 +42,34 @@ public class AccountsServiceImpl implements IAccountsService {
                     + customerDto.getMobileNumber());
         }
         Customer savedCustomer = customerRepository.save(customer);
-        accountsRepository.save(createNewAccount(savedCustomer));
+        Accounts account = accountsRepository.save(createNewAccount(savedCustomer));
+        sendCommunication(account, savedCustomer);
+    }
+
+    private void sendCommunication(Accounts account, Customer customer) {
+        var accountsMsgDto = new AccountsMsgDto(account.getAccountNumber(), customer.getName(),
+                customer.getEmail(), customer.getMobileNumber());
+        log.info("Sending Communication request for the details: {}", accountsMsgDto);
+        var result = streamBridge.send("sendCommunication-out-0", accountsMsgDto);
+        log.info("Is the Communication request successfully triggered ? : {}", result);
+    }
+
+    /**
+     * @param accountNumber - Long
+     * @return boolean indicating if the update of communication status is successful or not
+     */
+    @Override
+    public boolean updateCommunicationStatus(Long accountNumber) {
+        boolean isUpdated = false;
+        if (accountNumber != null) {
+            Accounts accounts = accountsRepository.findById(accountNumber).orElseThrow(
+                    () -> new ResourceNotFoundException("Account", "AccountNumber", accountNumber.toString())
+            );
+            accounts.setCommunicationSw(true);
+            accountsRepository.save(accounts);
+            isUpdated = true;
+        }
+        return isUpdated;
     }
 
     /**

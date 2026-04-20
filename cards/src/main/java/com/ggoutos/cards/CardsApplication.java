@@ -24,7 +24,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
                 url = "https://www.eazybytes.com/swagger-ui.html"))
 public class CardsApplication {
 
-    static void main(String[] args) {
+    public static void main(String[] args) {
         SpringApplication.run(CardsApplication.class, args);
     }
 

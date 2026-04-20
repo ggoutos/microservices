@@ -34,6 +34,7 @@
 
     <modules>
         <module>utils</module>
+        <module>message</module>
         <module>eurekaserver</module>
         <module>gatewayserver</module>
         <module>configserver</module>

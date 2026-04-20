@@ -1,0 +1,1 @@
+alter table accounts add communication_sw boolean null;
