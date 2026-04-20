@@ -37,7 +37,8 @@
 | **accounts** | 8080 | Customer accounts management (internal, not exposed) |
 | **loans** | 8090 | Loan management (internal, not exposed) |
 | **cards** | 9000 | Credit/debit cards management (internal, not exposed) |
-| **rabbitmq** | 5672, 15672 | Message broker (config refresh) |
+| **message** | 9010 | Event-driven messaging (email/SMS notifications) (internal, not exposed) |
+| **rabbitmq** | 5672, 15672 | Message broker (config refresh, event communication) |
 | **redis** | 6379 | Redis cache (session, rate limiting) |
 | **keycloak** | 7080 | Identity & Access Management (OAuth2/OIDC) |
 | **prometheus** | 9090 | Metrics collection & visualization |
@@ -113,59 +114,71 @@ Example: `http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234
 ### System Context
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     EazyBank Microservices Platform                       │
-│                                                                           │
-│                        ┌─────────────────┐                               │
-│                        │  GatewayServer  │                               │
-│                        │     :8072       │                               │
-│                        │  (WebFlux/Reactive)                            │
-│                        │  [OAuth2 JWT]   │                               │
-│                        │  [Trace Filters]│                               │
-│                        │  [Resilience4j] │                               │
-│                        └────────┬────────┘                               │
-│                                 │                                         │
-│         ┌───────────────────────┼───────────────────────┐               │
-│         │                       │                       │               │
-│  ┌──────▼───────┐     ┌────────▼───────┐     ┌────────▼───────┐       │
+┌───────────────────────────────────────────────────────────────────────┐
+│                     EazyBank Microservices Platform                   │
+│                                                                       │
+│                        ┌─────────────────┐                            │
+│                        │  GatewayServer  │                            │
+│                        │     :8072       │                            │
+│                        │  (WebFlux/Reactive)                          │
+│                        │  [OAuth2 JWT]   │                            │
+│                        │  [Trace Filters]│                            │
+│                        │  [Resilience4j] │                            │
+│                        └────────┬────────┘                            │
+│                                 │                                     │
+│         ┌───────────────────────┼─────────────────────┐               │
+│         │                       │                     │               │
+│  ┌──────▼───────┐     ┌─────────▼──────┐     ┌────────▼───────┐       │
 │  │   Accounts   │     │    Loans       │     │    Cards       │       │
 │  │   :8080      │     │    :8090       │     │    :9000       │       │
 │  │   (MySQL)    │     │   (MySQL)      │     │   (MySQL)      │       │
 │  │   [Feign]    │────▶│   [Client]     │     │   [Client]     │       │
 │  │ [CircuitBr]  │     │ [CircuitBr]    │     │ [CircuitBr]    │       │
-│  └──────┬───────┘     └────────┬───────┘     └────────┬───────┘       │
-│         │                      │                      │                │
-│         └──────────────────────┼──────────────────────┘                │
-│                                │                                        │
-│                     ┌──────────▼──────────┐     ┌──────────────┐       │
-│                     │  ConfigServer       │     │  Eureka      │       │
-│                     │     :8071           │     │  Server      │       │
-│                     │   (Git Backend)     │     │  :8070       │       │
-│                     └──────────┬──────────┘     └──────────────┘       │
-│                                │                                        │
-│                     ┌──────────▼──────────┐                             │
-│                     │    RabbitMQ         │                             │
-│                     │   :5672/:15672      │                             │
-│                     └─────────────────────┘                             │
-│                                                                          │
+│  └──────┬───────┘     └────────────────┘     └────────────────┘       │
+│         │                                                             │
+│         │ [StreamBridge - publish account events]                     │
+│         ▼                                                             │
+│  ┌──────────────────────────────────┐                                 │
+│  │      RabbitMQ (Event Bus)        │                                 │
+│  │        :5672/:15672              │                                 │
+│  └─┬───────────────────────────────┬┘                                 │
+│    │                               │                                  │
+│    │ send-communication        communication-sent                     │
+│    │ (account events)          (notifications sent)                   │
+│    ▼                               ▼                                  │
+│  ┌──────────────────────┐  ┌──────────────────────┐                   │
+│  │  Message Service     │  │   Accounts Service   │                   │
+│  │     :9010            │  │   (receives acks)    │                   │
+│  │ (Event Processor)    │  │                      │                   │
+│  │ [email|sms]          │  │ updateCommunication  │                   │
+│  └──────────────────────┘  └──────────────────────┘                   │
+│                                                                       │
+│         ┌──────────────────┐                ┌──────────────┐          │
+│         │  ConfigServer    │                │  Eureka      │          │
+│         │     :8071        │                │  Server      │          │
+│         │   (Git Backend)  │                │  :8070       │          │
+│         └────────┬─────────┘                └──────────────┘          │
+│                  │                                                    │
+│    [Dynamic Config via Bus Refresh]                                   │
+│                  │                                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │                   Observability Stack                            │  │
-│  │                                                                  │  │
-│  │  Keycloak :7080 ──▶  Redis :6379                               │  │
-│  │      ▲                    │                                      │  │
+│  │                   Observability Stack                           │  │
+│  │                                                                 │  │
+│  │  Keycloak :7080 ──▶  Redis :6379                                │  │
+│  │      ▲                    │                                     │  │
 │  │      │                    └──────────────┐                      │  │
-│  │  [OAuth2 JWT from all services]         │                      │  │
+│  │  [OAuth2 JWT from all services]         │                       │  │
 │  │                                          ▼                      │  │
-│  │  Prometheus :9090  ◀───  Grafana :3000  ◀───  Loki :3100      │  │
-│  │        ▲                                          │              │  │
+│  │  Prometheus :9090  ◀───  Grafana :3000  ◀───  Loki :3100        │  │
+│  │        ▲                                          │             │  │
 │  │        │                            ┌────────────┘              │  │
 │  │        │                            ▼                           │  │
 │  │        │                      Tempo :3110/4318                  │  │
-│  │        │                    (OTEL Collector)                   │  │
-│  │        └────────────────────────────┘                          │  │
-│  │              (OpenTelemetry Traces from all services)          │  │
+│  │        │                    (OTEL Collector)                    │  │
+│  │        └────────────────────────────┘                           │  │
+│  │              (OpenTelemetry Traces from all services)           │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Architectural Decisions
@@ -364,6 +377,7 @@ jacoco-maven-plugin                 # v0.8.14 - Code coverage (80% minimum thres
 - `LoansDto.java` - Loan data (mobileNumber, loanNumber, loanType, balances)
 - `ResponseDto.java` - Standard success response (statusCode, statusMsg)
 - `ErrorResponseDto.java` - Standard error response (apiPath, errorCode, errorMessage, errorTime)
+- `AccountsMsgDto.java` - Message record for async account events (accountNumber, name, email, mobileNumber) - used by Message service
 
 **Note**: This is a plain JAR library, not a Spring Boot application. Spring Boot repackaging is disabled so other modules can import it as a regular dependency.
 
@@ -473,7 +487,7 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - `AccountsApplication.java` - Entry point with `@EnableJpaAuditing`, `@EnableFeignClients`
 - `AccountsController.java` - REST endpoints for accounts CRUD
 - `CustomerController.java` - REST endpoint for aggregated customer details (requires `eazybank-correlation-id` header)
-- `IAccountsService.java` / `AccountsServiceImpl.java` - Account CRUD service layer
+- `IAccountsService.java` / `AccountsServiceImpl.java` - Account CRUD service layer with **event publishing via StreamBridge**
 - `ICustomersService.java` / `CustomersServiceImpl.java` - Customer details aggregation with Feign calls
 - `AccountsMapper.java` / `CustomerMapper.java` - Static entity/DTO mapping (target-mutation pattern)
 - `AccountsRepository.java` / `CustomerRepository.java` - Data access
@@ -488,6 +502,8 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - Feign clients use circuit breaker pattern (sliding window 10, failure threshold 50%, wait duration 10s)
 - Retry pattern enabled (max attempts 3, exponential backoff with multiplier 2)
 - Rate limiter configured (10 requests per second, timeout 1s)
+- **Event-Driven Communication**: On account creation, sends `AccountsMsgDto` to RabbitMQ via `streamBridge.send("sendCommunication-out-0", accountsMsgDto)` for async email/SMS notifications
+- **Event Consumption**: Listens to `updateCommunication-in-0` (topic: `communication-sent`) to update communication status after Message service processes
 
 ---
 
@@ -552,6 +568,60 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - Default loan type: `"Home Loan"`, limit: `100,000`
 - `/api/fetch` endpoint **requires** `eazybank-correlation-id` header
 - `updateLoan()` and `deleteLoan()` always return `true` (417 failure path in controller is unreachable)
+
+---
+
+### 4.8 Message Service
+
+**Purpose**: Event-driven messaging service for asynchronous communication (email/SMS notifications) triggered by account lifecycle events.
+
+| Property | Value |
+|----------|-------|
+| Package | `com.ggoutos.message` |
+| Port | 9010 |
+| Database | None (stateless event processor) |
+| Docker Image | `ggoutos/message:jib` |
+| Pattern | Spring Cloud Function + Stream (event-driven) |
+| Message Broker | RabbitMQ |
+
+**Key Classes**:
+- `MessageApplication.java` - Entry point with `@SpringBootApplication`
+- `MessageFunctions.java` - Spring Cloud Functions for event processing:
+  - `email()` - Bean function for email notifications (logs account details)
+  - `sms()` - Bean function for SMS notifications (logs and returns account number)
+
+**Function Composition**:
+```yaml
+spring.cloud.function.definition: email|sms
+# Processes: email → sms (piped functions)
+```
+
+**Message Flow**:
+1. **Accounts Service** calls `streamBridge.send("sendCommunication-out-0", accountsMsgDto)` on account creation
+2. **RabbitMQ** receives message on `send-communication` exchange
+3. **Message Service** consumes from `emailsms-in-0` binding (topic: `send-communication`)
+4. **Functions** process event (`email()` → `sms()` pipeline)
+5. **Output** published to `emailsms-out-0` binding (topic: `communication-sent`)
+6. **Accounts Service** consumes on `updateCommunication-in-0` (topic: `communication-sent`)
+
+**DTOs**:
+- `AccountsMsgDto` (record with fields: `accountNumber`, `name`, `email`, `mobileNumber`) - Published from Accounts service
+
+**Stream Configuration**:
+```yaml
+spring.cloud.stream.bindings:
+  emailsms-in-0:
+    destination: send-communication
+    group: message
+  emailsms-out-0:
+    destination: communication-sent
+```
+
+**Notable Implementation Details**:
+- Fully async/non-blocking via Spring Cloud Stream
+- No database required (stateless processor)
+- Uses `@Slf4j` for all logging
+- RabbitMQ binder configuration via environment variables
 
 ---
 
@@ -1766,7 +1836,7 @@ public class InvestmentsController {
 
 ### 15.3 Inter-Service Communication
 
-**Using Feign Clients** (recommended):
+**Using Feign Clients** (recommended for synchronous calls):
 ```java
 @FeignClient(name = "investments")
 public interface InvestmentsFeignClient {
@@ -1774,6 +1844,37 @@ public interface InvestmentsFeignClient {
     InvestmentsDto fetchInvestmentDetails(
         @RequestHeader(name = "eazybank-correlation-id", required = true) String correlationId,
         @RequestParam String mobileNumber);
+}
+```
+
+**Using StreamBridge** (recommended for asynchronous events):
+```java
+@RequiredArgsConstructor
+@Service
+public class InvestmentsServiceImpl implements IInvestmentsService {
+    private final StreamBridge streamBridge;
+    
+    private void publishInvestmentEvent(Investment investment) {
+        var investmentMsgDto = new InvestmentMsgDto(investment.getId(), investment.getType(), ...);
+        boolean sent = streamBridge.send("publishInvestment-out-0", investmentMsgDto);
+        log.info("Event published: {}", sent);
+    }
+}
+```
+
+**Event Processing Pattern** (Spring Cloud Function):
+```java
+// In message service
+@Configuration
+public class MessageFunctions {
+    @Bean
+    public Function<InvestmentMsgDto, InvestmentMsgDto> processInvestment() {
+        return msg -> {
+            log.info("Processing investment: {}", msg);
+            // Perform async operations (notifications, auditing, etc.)
+            return msg;
+        };
+    }
 }
 ```
 
@@ -1857,13 +1958,24 @@ CREATE TABLE investments (
 | OBS-003 | No alerting rules configured in Prometheus | No notifications on issues | Medium | **New** ✅ |
 | OBS-004 | Redis caching not leveraged in application code | Unused infrastructure | Low | **New** ✅ |
 
-### 16.7 Planned Improvements
+### 16.7 Event-Driven Messaging
+
+| ID | Issue | Impact | Priority | Status |
+|----|-------|--------|----------|--------|
+| EVT-001 | Message service functions lack error handling and don't implement retry logic | Failed notifications silently lost | **High** | Open |
+| EVT-002 | No dead-letter queue (DLQ) configured for failed messages | Data loss on processing failures | **High** | Open |
+| EVT-003 | Stream bindings use default group/concurrency settings | May not handle production load | Medium | Open |
+| EVT-004 | Accounts `updateCommunicationStatus()` method defined but possibly unused after event publishing | Dead code | Low | Open |
+| EVT-005 | No monitoring/alerting on message queue depth or lag | Invisible queue buildup | Medium | Open |
+
+### 16.8 Planned Improvements
 
 - [x] Add comprehensive observability stack (Grafana, Loki, Prometheus, Tempo)
 - [x] Implement OAuth2/Keycloak authentication
 - [x] Add circuit breaker pattern (Resilience4j) for Feign clients
 - [x] Add database volume mounts for Docker persistence
 - [x] Fix card number validation mismatch (12 vs 16 digits) - Needs verification
+- [x] Implement event-driven messaging (StreamBridge + Spring Cloud Stream) for async notifications
 - [ ] Add role-based access control (RBAC) per endpoint
 - [ ] Configure Prometheus alerting rules
 - [ ] Add distributed rate limiting (Redis backend)
@@ -1873,6 +1985,8 @@ CREATE TABLE investments (
 - [ ] Move secrets to external secrets manager (HashiCorp Vault, AWS Secrets Manager)
 - [ ] Add Keycloak client/realm configuration in code/IaC
 - [ ] Reduce OTEL javaagent overhead
+- [ ] Add error handling and retry logic to Message service functions
+- [ ] Implement dead-letter queue (DLQ) for failed message processing
 
 ---
 
@@ -1914,6 +2028,6 @@ CREATE TABLE investments (
 
 ---
 
-*Last Updated: 2026-04-17*
-*Version: 4.0*
-*Major Changes: Added observability stack (Loki/Prometheus/Tempo/Grafana), OAuth2/Keycloak authentication, Resilience4j patterns, Redis caching, JaCoCo code coverage enforcement, database persistence volumes*
+*Last Updated: 2026-04-20*
+*Version: 4.1*
+*Major Changes: Added event-driven messaging service (StreamBridge + Spring Cloud Stream + RabbitMQ), Message module for async email/SMS notifications, AccountsMsgDto for event payloads, documented inter-service async communication patterns, added known issues for event-driven messaging*
