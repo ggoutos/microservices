@@ -263,6 +263,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+#    volumes:
+#      - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       test: rabbitmq-diagnostics check_port_connectivity
       interval: 10s
@@ -386,6 +388,19 @@ services:
       file: common-config.yml
       service: microservice-base-config
 
+  message:
+    image: ggoutos/message:${IMAGE_TAG}
+    container_name: message-ms
+    depends_on:
+      rabbit:
+        condition: service_healthy
+    env_file:
+      - .env
+      - .env.${APP_ENV}
+    extends:
+      file: common-config.yml
+      service: microservice-base-config
+
   accounts:
     image: ggoutos/accounts:${IMAGE_TAG}
     container_name: accounts-ms
@@ -463,3 +478,4 @@ volumes:
   loans-data:
   grafana-data:
   keycloak-data:
+#  rabbitmq-data:

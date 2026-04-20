@@ -31,6 +31,9 @@ public class Accounts extends BaseEntity {
     @Column(name = "branch_address")
     private String branchAddress;
 
+    @Column(name = "communication_sw")
+    private Boolean communicationSw;
+
     @Override
     public final boolean equals(Object o) {
         if (this == o) return true;

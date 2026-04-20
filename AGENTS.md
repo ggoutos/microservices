@@ -344,8 +344,6 @@ jacoco-maven-plugin                 # v0.8.14 - Code coverage (80% minimum thres
 - No ConfigServer client dependency (self-configured)
 - No security/authentication (internal service)
 
-**Note**: The `main` method is package-private (`static void main`), which is non-standard but functional.
-
 ---
 
 ### 4.2 Utils Module
