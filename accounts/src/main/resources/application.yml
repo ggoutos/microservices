@@ -4,6 +4,7 @@ server:
 logging:
   level:
     org.springframework: warn
+    org.apache.kafka: error
   pattern:
     level: "%5p [${spring.application.name},%X{trace_id},%X{span_id}]"
 
@@ -65,12 +66,37 @@ spring:
     function:
       definition: updateCommunication
     stream:
+      default-binder: ${SPRING_CLOUD_STREAM_DEAFULT_BINDER:kafka} # This line specifies the default binder to use. You can change it to 'rabbit' if you want to use RabbitMQ.
       bindings:
         sendCommunication-out-0:
           destination: send-communication
         updateCommunication-in-0:
           destination: communication-sent
           group: ${spring.application.name}
+      kafka:
+        binder:
+          brokers:
+            - ${KAFKA_HOST:localhost}:9092
+      binders:
+        rabbit:
+          type: rabbit
+          environment:
+            spring:
+              rabbitmq:
+                host: ${RABBITMQ_HOST:localhost}
+                port: 5672
+                username: ${SPRING_RABBITMQ_USER:guest}
+                password: ${SPRING_RABBITMQ_PASSWORD:guest}
+        kafka:
+          type: kafka
+          environment:
+            spring:
+              kafka:
+                bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost}:9092
+                consumer:
+                  auto-offset-reset: earliest
+                producer:
+                  acks: all
   config:
     import: "configserver:${spring.cloud.config.uri}"
 

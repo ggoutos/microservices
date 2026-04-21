@@ -476,10 +476,11 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 | Custom Dockerfile | Yes (multi-stage: JVM via jlink + GraalVM Native) |
 | Feign Clients | Cards, Loans |
 | Schema Management | Flyway (`V1__init_schema.sql`) |
+| Stream Binder | RabbitMQ (default) or Kafka |
 
 **Entities**:
 - `Customer` - Customer information (PK: `customer_id`, fields: name, email, mobileNumber)
-- `Accounts` - Account details (PK: `account_number`, FK: `customer_id` logical, accountType, branchAddress)
+- `Accounts` - Account details (PK: `account_number`, FK: `customer_id` logical, accountType, branchAddress, communicationSw for tracking async notification status)
 
 **Relationship**: One-to-one (Customer → Accounts via `customer_id` column, no JPA `@ManyToOne`)
 
@@ -494,6 +495,7 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 - `AuditAwareImpl.java` - Auditor provider (`"ACCOUNTS_MS"`)
 - `AccountsConstants.java` - HTTP status codes and business constants
 - `CardsFeignClient.java` / `LoansFeignClient.java` - Inter-service clients (pass correlation ID)
+- `AccountsFunctions.java` - Spring Cloud Stream functions: `updateCommunication()` Consumer bean listens to notification completion events from Message service
 
 **Notable Implementation Details**:
 - Account number generation: `1000000000L + random.nextInt(900000000)` (uses `java.util.Random`, not `SecureRandom`)
@@ -582,27 +584,47 @@ private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
 | Database | None (stateless event processor) |
 | Docker Image | `ggoutos/message:jib` |
 | Pattern | Spring Cloud Function + Stream (event-driven) |
-| Message Broker | RabbitMQ |
+| Message Broker | Kafka (default) or RabbitMQ (configurable) |
 
 **Key Classes**:
 - `MessageApplication.java` - Entry point with `@SpringBootApplication`
 - `MessageFunctions.java` - Spring Cloud Functions for event processing:
-  - `email()` - Bean function for email notifications (logs account details)
-  - `sms()` - Bean function for SMS notifications (logs and returns account number)
+  - `email()` - Bean function (Function) for email notifications (logs account details, returns AccountsMsgDto)
+  - `sms()` - Bean function (Function) for SMS notifications (logs and returns account number as Long)
 
 **Function Composition**:
 ```yaml
 spring.cloud.function.definition: email|sms
 # Processes: email → sms (piped functions)
+# email() accepts AccountsMsgDto, returns AccountsMsgDto
+# sms() accepts Long (from email output), returns Long
+```
+
+**Message Broker Configuration**:
+```yaml
+spring.cloud.stream:
+  default-binder: kafka  # Default is Kafka, can override with KAFKA_HOST or switch to 'rabbit'
+  binders:
+    kafka:
+      type: kafka
+      environment:
+        spring.kafka:
+          bootstrap-servers: ${KAFKA_HOST:localhost}:9092
+    rabbit:
+      type: rabbit
+      environment:
+        spring.rabbitmq:
+          host: ${RABBITMQ_HOST:localhost}
+          port: 5672
 ```
 
 **Message Flow**:
 1. **Accounts Service** calls `streamBridge.send("sendCommunication-out-0", accountsMsgDto)` on account creation
-2. **RabbitMQ** receives message on `send-communication` exchange
-3. **Message Service** consumes from `emailsms-in-0` binding (topic: `send-communication`)
+2. **Kafka/RabbitMQ** receives message on `send-communication` topic/destination
+3. **Message Service** consumes from `emailsms-in-0` binding (destination: `send-communication`)
 4. **Functions** process event (`email()` → `sms()` pipeline)
-5. **Output** published to `emailsms-out-0` binding (topic: `communication-sent`)
-6. **Accounts Service** consumes on `updateCommunication-in-0` (topic: `communication-sent`)
+5. **Output** published to `emailsms-out-0` binding (destination: `communication-sent`)
+6. **Accounts Service** consumes on `updateCommunication-in-0` binding via `AccountsFunctions.updateCommunication()` Consumer
 
 **DTOs**:
 - `AccountsMsgDto` (record with fields: `accountNumber`, `name`, `email`, `mobileNumber`) - Published from Accounts service
@@ -612,16 +634,18 @@ spring.cloud.function.definition: email|sms
 spring.cloud.stream.bindings:
   emailsms-in-0:
     destination: send-communication
-    group: message
+    group: message  # Consumer group for message service
   emailsms-out-0:
     destination: communication-sent
 ```
 
 **Notable Implementation Details**:
-- Fully async/non-blocking via Spring Cloud Stream
+- Fully async/non-blocking via Spring Cloud Stream with pluggable binders
 - No database required (stateless processor)
 - Uses `@Slf4j` for all logging
-- RabbitMQ binder configuration via environment variables
+- RabbitMQ binder configured in `application.yml` for easy switching (set `SPRING_CLOUD_STREAM_DEFAULT_BINDER=rabbit`)
+- Kafka binder configured as default with configurable bootstrap servers
+- Function composition allows flexible piping of processing stages (email → sms)
 
 ---
 
@@ -705,6 +729,7 @@ docker compose logs -f eurekaserver
 - Constants: `{Service}Constants` with private constructor
 - Exceptions: `{Resource}NotFoundException`, `{Entity}AlreadyExistsException`
 - Feign Clients: `{Service}FeignClient` in `service/client/` subpackage
+- Spring Cloud Functions: `{Service}Functions` in `functions/` subpackage (Configuration class with Bean methods)
 
 **Lombok Usage**:
 ```java
@@ -724,6 +749,34 @@ public class CustomerDto { ... }
 @Entity
 @Getter @Setter @ToString @RequiredArgsConstructor
 public class Customer extends BaseEntity { ... }
+```
+
+**Test Class Organization** (Modern Pattern):
+```java
+@WebMvcTest(AccountsController.class)
+@DisplayName("AccountsController Tests")
+class AccountsControllerTest {
+    
+    @Nested
+    @DisplayName("createAccount() Tests")
+    class CreateAccountTests {
+        @Test
+        @DisplayName("Should create account and return 201")
+        void shouldCreateAndReturn201() { ... }
+        
+        @Test
+        @DisplayName("Should validate mobile number")
+        void shouldValidateMobileNumber() { ... }
+    }
+    
+    @Nested
+    @DisplayName("fetchAccount() Tests")
+    class FetchAccountTests {
+        @Test
+        @DisplayName("Should fetch account successfully")
+        void shouldFetchSuccessfully() { ... }
+    }
+}
 ```
 
 **Mapper Pattern** (static, target-mutation):
@@ -881,6 +934,313 @@ GatewayServer (API gateway)
 
 **Note**: Sensitive credentials should be set in `.env.local` (git-ignored for dev) or `.env.prod` (production secrets). The `.env` file has placeholders; actual values must be provided in environment-specific files.
 
+### 6.5 Docker & Kubernetes Setup
+
+All Docker Compose and Kubernetes manifests are organized in the `.docker/` directory:
+
+```
+.docker/
+├── docker-compose.yml       # Complete Docker Compose setup
+├── common-config.yml        # Shared service configurations
+├── .env                     # Default environment variables
+├── .env.local              # Development secrets (git-ignored)
+├── .env.prod               # Production secrets (git-ignored)
+├── alloy/                  # Grafana Alloy configuration
+├── grafana/                # Grafana dashboards and datasources
+├── loki/                   # Loki log aggregation configuration
+├── prometheus/             # Prometheus metrics configuration
+├���─ tempo/                  # Tempo distributed tracing configuration
+├── nginx/                  # Nginx gateway configuration
+├── helm/                   # Helm charts for Kubernetes
+│   └── microservices-common/  # Common Helm chart (library)
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       ├── charts/
+│       └── templates/
+├── k8s-generated/          # Pre-generated Kubernetes manifests
+│   ├── *-deployment.yaml   # Service deployments
+│   ├── *-service.yaml      # Service definitions
+│   ├── *-configmap.yaml    # Configuration maps
+│   ├── *-persistentvolumeclaim.yaml  # Persistent volumes
+│   └── *-rbac.yaml         # RBAC configurations
+└── .data/                  # Local data persistence (git-ignored)
+    ├── minio/              # MinIO S3 storage for Loki
+```
+
+#### **Docker Compose Architecture**
+
+**Managed Services** (Complete stack):
+- **Observability Stack**: Grafana, Prometheus, Tempo, Loki (with Alloy collector), MinIO (S3 backend)
+- **Message Brokers**: RabbitMQ (port 5672), Kafka (port 9092)
+- **Cache**: Redis (port 6379)
+- **Identity**: Keycloak (port 7080)
+- **Databases**: MySQL instances for accounts (3307), loans (3308), cards (3309)
+- **Microservices**: Eureka Server, ConfigServer, Gateway Server, Accounts, Cards, Loans, Message services
+- **Log Gateway**: Nginx (port 3100) - Load balancer for Loki read/write
+
+**Docker Compose File Structure**:
+- Each service uses `common-config.yml` for shared network, resource limits, and base health checks
+- Database services inherit `microservice-db-config` for MySQL-specific health checks
+- App services inherit `microservice-base-config` for HTTP health checks and network config
+- All services configured with `depends_on` with `service_healthy` conditions for ordered startup
+
+#### **Running with Docker Compose**
+
+**Full Stack (Development)**:
+```bash
+cd .docker
+
+# With default .env
+docker compose up --build
+
+# With specific environment
+docker compose --env-file .env.local up --build
+docker compose --env-file .env.prod up --build
+
+# View all running services
+docker compose ps
+
+# Monitor logs
+docker compose logs -f                    # All services
+docker compose logs -f accounts           # Specific service
+docker compose logs -f accounts cards     # Multiple services
+```
+
+**Service-Level Commands**:
+```bash
+# Start specific services only
+docker compose up accounts cards loans
+
+# Restart services
+docker compose restart accounts
+docker compose restart
+
+# Stop services
+docker compose stop                       # Stop all
+docker compose down --volumes             # Stop and remove volumes
+
+# View service status
+docker compose ps
+docker compose health
+
+# Execute commands in containers
+docker compose exec accounts sh           # Interactive shell
+docker compose exec accountsdb mysql -u root -p accountsdb  # MySQL CLI
+```
+
+**Resource Management**:
+```bash
+# Check resource usage
+docker stats
+
+# Remove unused resources
+docker compose down
+docker system prune
+docker volume prune
+
+# Rebuild a specific service image
+docker compose build accounts --no-cache
+```
+
+**Health Checks**:
+All services have health checks configured:
+- HTTP services: `/actuator/health/readiness` endpoint
+- MySQL databases: `mysqladmin ping`
+- Message brokers: Port connectivity tests
+- Cache services: Command-based checks (e.g., Redis PING)
+
+**Troubleshooting Docker Compose**:
+```bash
+# Check service logs for errors
+docker compose logs configserver | grep ERROR
+
+# Verify network connectivity
+docker compose exec accounts ping eurekaserver
+
+# Check environment variables in running container
+docker compose exec accountsdb printenv MYSQL_ROOT_PASSWORD
+
+# Access service directly
+docker compose exec accounts wget -O- http://localhost:8080/actuator/health
+```
+
+#### **Kubernetes Deployment**
+
+**K8s Manifests** (Pre-generated in `.docker/k8s-generated/`):
+
+| Manifest Type | Convention | Examples |
+|---------------|-----------|----------|
+| **Deployments** | `{service}-deployment.yaml` | `accounts-deployment.yaml`, `prometheus-deployment.yaml` |
+| **Services** | `{service}-service.yaml` | `accounts-service.yaml`, `kafka-service.yaml` |
+| **ConfigMaps** | `{service}-cm*.yaml` | `prometheus-cm0-configmap.yaml`, `env-configmap.yaml` |
+| **PersistentVolumeClaims** | `{service}-data-persistentvolumeclaim.yaml` | `accounts-data-persistentvolumeclaim.yaml` |
+| **RBAC** | `{service}-rbac.yaml` | `alloy-rbac.yaml` |
+| **External Services** | `{service}-external-service.yaml` | `accountsdb-external-service.yaml` (for external DBs) |
+
+**Kubernetes Namespace Structure**:
+```
+microservices/
+├── Config & Secrets
+│   ├── env-configmap.yaml              # Default environment
+│   ├── env-prod-configmap.yaml         # Production environment
+│   └── *.yaml (service-specific)
+├── Service Layer (Port 8072 ingress)
+│   ├── gateway-service.yaml            # LoadBalancer - External entry point
+│   ├── gatewayserver-deployment.yaml   # API Gateway instance
+│   └── gateway-cm0-configmap.yaml
+├── Discovery & Config
+│   ├── eurekaserver-{deployment,service}.yaml
+│   ├── configserver-{deployment,service}.yaml
+│   └── configserver external DB service
+├── Business Services
+│   ├── accounts-{deployment,service,data-pvc}.yaml
+│   ├── cards-{deployment,service,data-pvc}.yaml
+│   ├── loans-{deployment,service,data-pvc}.yaml
+│   ├── message-{deployment,service}.yaml
+├── Infrastructure Services
+│   ├── rabbit-{deployment,service}.yaml
+│   ├── kafka-{deployment,service}.yaml
+│   ��── redis-{deployment,service}.yaml
+│   ├── keycloak-{deployment,service,data-pvc}.yaml
+├── Databases
+│   ├── accountsdb-{deployment,service,external-service,data-pvc}.yaml
+│   ├── loansdb-{deployment,service,external-service,data-pvc}.yaml
+│   ├── cardsdb-{deployment,service,external-service,data-pvc}.yaml
+├── Observability
+│   ├── prometheus-{deployment,service,cm0-configmap}.yaml
+│   ├── grafana-{deployment,service,data-pvc,cm0-configmap}.yaml
+│   ├── tempo-{deployment,service,cm0-configmap}.yaml
+│   ├── {read,write,backend}-{deployment,service,cm0-configmap}.yaml (Loki)
+│   ├── alloy-{deployment,service,rbac,cm0-configmap}.yaml
+│   └── minio-{deployment,service}.yaml
+```
+
+**Deploy to Kubernetes**:
+```bash
+# Install Helm (if deploying via Helm)
+helm install microservices .docker/helm/microservices-common \
+  --namespace microservices \
+  --create-namespace \
+  -f .docker/helm/microservices-common/values.yaml
+
+# Or apply pre-generated K8s manifests directly
+kubectl create namespace microservices
+kubectl apply -f .docker/k8s-generated/ \
+  -n microservices
+
+# Verify deployment
+kubectl get pods -n microservices
+kubectl get svc -n microservices
+kubectl get pvc -n microservices
+
+# Monitor pod startup
+kubectl logs -f deployment/accounts -n microservices
+kubectl describe pod <pod-name> -n microservices
+
+# Port forwarding to access services
+kubectl port-forward -n microservices svc/gateway 3100:3100   # Grafana
+kubectl port-forward -n microservices svc/accounts 8080:8080  # Accounts service
+
+# Scale deployments
+kubectl scale deployment accounts --replicas=3 -n microservices
+
+# Delete everything
+kubectl delete namespace microservices
+```
+
+**External Database Configuration**:
+- Files like `accountsdb-external-service.yaml` are used when databases are managed externally
+- Configure ExternalName services to point to cloud-hosted databases
+- Update environment variables to use external connection strings
+
+**Persistent Volumes**:
+- All data-bound services (MySQL, Grafana, Keycloak, MinIO) have PersistentVolumeClaims (PVCs)
+- Storage class defaults to `standard` (can be customized per environment)
+- Data survives pod restarts but NOT namespace deletion
+
+**Common Kubernetes Commands**:
+```bash
+# View resources
+kubectl get all -n microservices
+kubectl describe node
+kubectl top nodes
+kubectl top pods -n microservices
+
+# Debugging
+kubectl exec -it <pod-name> -n microservices -- /bin/sh
+kubectl logs --tail=50 -f <pod-name> -n microservices
+kubectl events -n microservices
+
+# Update deployments
+kubectl set image deployment/accounts \
+  accounts=ggoutos/accounts:latest \
+  -n microservices
+
+# Check health and readiness
+kubectl get pods -n microservices -o wide
+kubectl rollout status deployment/accounts -n microservices
+```
+
+#### **Environment Configuration**
+
+**.env** (default, in git):
+- Public variables for local development
+- Service hostnames (localhost vs. container names)
+- Default image tag, profiles
+- OTEL configuration
+
+**.env.local** (git-ignored, for dev):
+```bash
+MYSQL_ROOT_PASSWORD=devpassword
+CONFIG_SERVER_USER=admin
+CONFIG_SERVER_PASSWORD=admin123
+KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+SPRING_PROFILES_ACTIVE=default
+```
+
+**.env.prod** (git-ignored, for production):
+```bash
+MYSQL_ROOT_PASSWORD=<prod-password>
+CONFIG_SERVER_USER=<prod-user>
+CONFIG_SERVER_PASSWORD=<prod-password>
+GIT_URI=https://github.com/your-repo/.config.git
+GIT_USERNAME=<github-user>
+GIT_TOKEN=<github-pat>
+ENCRYPTION_KEY=<prod-encryption-key>
+SPRING_PROFILES_ACTIVE=prod
+KC_BOOTSTRAP_ADMIN_PASSWORD=<prod-admin-password>
+```
+
+**Loading Configuration in Docker Compose**:
+```yaml
+# Services load multiple env files (right-to-left priority)
+env_file:
+  - .env              # Base config
+  - .env.${APP_ENV}   # Environment-specific overrides (dev/prod)
+```
+
+#### **Multi-Environment Setup**
+
+**Environment Variables**:
+```bash
+export APP_ENV=local   # Loads .env and .env.local
+export APP_ENV=prod    # Loads .env and .env.prod
+```
+
+**Docker Compose with Different Environments**:
+```bash
+# Development (localhost databases)
+APP_ENV=local docker compose --env-file .env.local up
+
+# Production (cloud databases, Git config)
+APP_ENV=prod docker compose --env-file .env.prod up --build
+```
+
+**Database Host Mapping**:
+- **Dev**: `jdbc:mysql://localhost:3307/accountsdb` (direct local access)
+- **Prod (Docker)**: `jdbc:mysql://accountsdb:3306/accountsdb` (container network)
+- **Prod (K8s)**: `jdbc:mysql://accountsdb-service.microservices.svc.cluster.local:3306/accountsdb` (DNS service discovery)
+
 ---
 
 ## 7. Configuration Management
@@ -1004,6 +1364,7 @@ SPRING_PROFILES_ACTIVE=prod
 │    customer_id      │◀─── Logical FK (no DB constraint)
 │    account_type     │
 │    branch_address   │
+│    communication_sw │◀─── Boolean: tracks async notification status
 │    + audit fields   │
 └─────────────────────┘
 
@@ -1283,7 +1644,7 @@ src/test/java/
 
 ### 11.2 Test Types
 
-**Current Test Coverage (PR #10 - Accounts Service)**:
+**Current Test Coverage** (Accounts, Cards, Loans, Gateway Services):
 
 **Context Load Test** (all services):
 ```java
@@ -1301,37 +1662,65 @@ class AccountsApplicationTests {
 }
 ```
 
-**Controller Tests** (`@WebMvcTest`):
-- `CustomerControllerTest.java` - Tests for aggregated customer details endpoint
-  - Validates successful fetch with 200 status
-  - Validates missing/invalid mobile number (400)
-  - Validates missing correlation ID header (400)
-  - Validates service exceptions (500)
-  - Validates partial data scenarios (cards/loans null)
-  - Uses `@MockitoBean` for service mocking (Spring Boot 4.x pattern)
+**Gateway Filter Tests** (RequestTraceFilter, ResponseTraceFilter, FilterUtility):
+- `RequestTraceFilterTest.java` - Tests correlation ID generation and propagation
+  - Tests using existing correlation ID when present
+  - Tests generating UUID when correlation ID missing
+  - Uses @Nested and @DisplayName for organization
+  - Uses StepVerifier for reactive Mono assertions
+- `ResponseTraceFilterTest.java` - Tests response header injection
+  - Verifies GlobalFilter bean creation
+  - Validates correlation ID addition to response
+- `FilterUtilityTest.java` - Tests header manipulation utilities
+  - Tests getCorrelationId(), setCorrelationId(), setRequestHeader()
+  - Uses @Nested classes for logical grouping
 
-**Service Tests** (Unit - PR #10):
-- `CustomersServiceImplTest.java` - Tests for customer details aggregation
+**Audit Tests**:
+- `AuditAwareImplTest.java` - Tests auditor provider per service
+  - Validates correct auditor string returned (e.g., "ACCOUNTS_MS")
+
+**Controller Tests** (`@WebMvcTest`):
+- `LoansControllerTest.java`, `CardsControllerTest.java` - Tests for business endpoints
+  - Validates successful creation (201), fetch (200), update (200), delete (200)
+  - Validates validation errors (400), not found (404), business failures (417)
+  - Uses `@MockitoBean` for service mocking (Spring Boot 4.x pattern)
+  - Organized with @Nested classes and @DisplayName annotations
+
+**Exception Handler Tests** (`@WebMvcTest`):
+- `GlobalExceptionHandlerTest.java` (multiple services) - Comprehensive exception handling tests
+  - Tests ResourceNotFoundException (404)
+  - Tests *AlreadyExistsException variants (400)
+  - Tests validation errors (400)
+  - Tests generic exceptions (500)
+  - Tests ConstraintViolationException (400)
+  - Uses @Nested for logical grouping of related test cases
+  - Uses ObjectMapper for JSON assertions
+
+**Service Tests** (Unit):
+- `CustomersServiceImplTest.java` (Accounts) - Tests customer details aggregation
   - Validates successful customer details retrieval with cards/loans
-  - Validates `ResourceNotFoundException` when customer not found
-  - Validates `ResourceNotFoundException` when account not found
+  - Validates ResourceNotFoundException when customer/account not found
   - Validates correlation ID propagation to Feign clients
   - Uses `@ExtendWith(MockitoExtension)` with `@Mock` and `@InjectMocks`
 
-**Entity Tests** (PR #10):
-- `CustomerTest.java` - Customer entity validation
+**Entity Tests**:
+- `CustomerTest.java`, `AccountsTest.java` - Entity validation
   - Getters/setters validation
-  - `equals()` and `hashCode()` tests (based on `customerId`)
+  - `equals()` and `hashCode()` tests (based on primary key)
   - `toString()` validation
   - Entity inheritance tests (extends `BaseEntity`)
   - Constructor tests (no-args)
-  - Entity generation strategy documentation (IDENTITY)
 
-- `AccountsTest.java` - Accounts entity validation
-  - `equals()` and `hashCode()` tests (based on `accountNumber`)
-  - `toString()` validation
-  - Entity inheritance tests (extends `BaseEntity`)
-  - Constructor tests (no-args)
+**Modern Test Patterns** (used across all tests):
+- `@Nested` - Groups related tests into logical sections
+- `@DisplayName` - Provides human-readable test descriptions
+- `@ExtendWith(MockitoExtension.class)` - Unit test extension (no Spring context)
+- `@WebMvcTest(ControllerClass.class)` - Controller slice test (Spring context, mocked services)
+- `@SpringBootTest` - Full integration test (complete Spring context)
+- `MockMvc` - Test REST endpoints without starting server
+- `@MockitoBean` - Mock Spring beans in test context (Boot 4.x)
+- `@Mock`, `@InjectMocks` - Mockito annotations for unit tests
+- `StepVerifier` - Verify reactive Stream behavior (for gateway tests)
 
 **Recommended Test Types** (not yet implemented):
 
@@ -1399,14 +1788,23 @@ mvn clean test jacoco:report
 
 ### 11.4 Test Coverage Expectations
 
-**Current State**: Minimal (contextLoads tests only across all services)
+**Current State**: Comprehensive test coverage with context load tests, gateway filter tests, exception handler tests, audit tests, and basic entity tests across all services. Modern testing patterns (@Nested, @DisplayName) in use.
 
-**Recommended Coverage**:
-- Services: 80%+ (business logic)
+**Recommended Coverage Enhancements**:
+- Repository layer tests (`@DataJpaTest`) with custom query validation
+- Integration tests for cross-service communication (Feign clients)
+- Stream/messaging integration tests (Spring Cloud Stream Test Binder)
+- End-to-end API tests through gateway
+- Performance tests for critical paths
+
+**JaCoCo Code Coverage Threshold**: 80% minimum enforced at build time via `jacoco-maven-plugin`. Coverage report generated at `target/site/jacoco/index.html` after `mvn clean test jacoco:report`.
+
+**Coverage by Layer** (Target):
+- Services: 80%+ (business logic core)
 - Controllers: 70%+ (endpoint mappings, validation)
 - Repositories: 50%+ (custom queries)
-- Exceptions: 100% (error handling)
-- Gateway Filters: 80%+ (correlation ID generation/passthrough)
+- Exceptions: 100% (error handling paths)
+- Gateway Filters: 80%+ (correlation ID generation/propagation)
 
 ---
 
@@ -1732,8 +2130,10 @@ Port 8080 is already in use
 **Solution**:
 ```bash
 # Find process using port (Windows)
-netstat -ano | findstr :8080
-# Kill process
+netstat -ano | findstr :8070
+# This shows the app using port 8080.
+tasklist /FI "PID eq <PID>"
+# Kill process <PID>
 taskkill /PID <PID> /F
 
 # Or change port in application.yml
@@ -1919,6 +2319,7 @@ CREATE TABLE investments (
 | CQ-005 | Loans `updateLoan()`/`deleteLoan()` always return `true` (417 path unreachable) | Dead code path | Low | Open |
 | CQ-006 | Inconsistent filter definition pattern in gateway (`@Component` vs `@Configuration`+`@Bean`) | Style inconsistency | Low | Open |
 | CQ-007 | ConfigServer native profile is non-functional (classpath directories don't exist) | Broken fallback | Medium | Open |
+| CQ-008 | Message service default binder is Kafka, but RabbitMQ is commonly associated with platform | Confusing configuration | Low | Open |
 
 ### 16.3 Security & Reliability Issues
 
@@ -1965,8 +2366,9 @@ CREATE TABLE investments (
 | EVT-001 | Message service functions lack error handling and don't implement retry logic | Failed notifications silently lost | **High** | Open |
 | EVT-002 | No dead-letter queue (DLQ) configured for failed messages | Data loss on processing failures | **High** | Open |
 | EVT-003 | Stream bindings use default group/concurrency settings | May not handle production load | Medium | Open |
-| EVT-004 | Accounts `updateCommunicationStatus()` method defined but possibly unused after event publishing | Dead code | Low | Open |
+| EVT-004 | Accounts `updateCommunicationStatus()` properly invoked via AccountsFunctions Consumer bean, but no error handling in consumer | Notification failures not tracked | Medium | Open |
 | EVT-005 | No monitoring/alerting on message queue depth or lag | Invisible queue buildup | Medium | Open |
+| EVT-006 | Message service binder defaults to Kafka (not RabbitMQ) - can be overridden via `SPRING_CLOUD_STREAM_DEFAULT_BINDER` | Confusing since RabbitMQ emphasized in docs | Low | Open |
 
 ### 16.8 Planned Improvements
 
@@ -1987,6 +2389,7 @@ CREATE TABLE investments (
 - [ ] Reduce OTEL javaagent overhead
 - [ ] Add error handling and retry logic to Message service functions
 - [ ] Implement dead-letter queue (DLQ) for failed message processing
+- [ ] Switch Message service default binder from Kafka to RabbitMQ for consistency
 
 ---
 
