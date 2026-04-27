@@ -1,0 +1,24 @@
+apiVersion: v1
+data:
+  APP_ENV: prod
+  COMPOSE_PROJECT_NAME: microservices-prod
+  CONFIG_SERVER_PASSWORD: config123!@#
+  CONFIG_SERVER_USER: admin
+  ENCRYPTION_KEY: very_secret_key
+  GF_SMTP_ENABLED: "true"
+  GF_SMTP_FROM_ADDRESS: tkd4real@gmail.com
+  GF_SMTP_FROM_NAME: Grafana
+  GF_SMTP_HOST: smtp.gmail.com:587
+  GF_SMTP_PASSWORD: nuui wdoa oeie iyne
+  GF_SMTP_SKIP_VERIFY: "true"
+  GF_SMTP_USER: tkd4real@gmail.com
+  GIT_TOKEN: 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
+  GIT_URI: https://github.com/ggoutos/microservices.git
+  GIT_USERNAME: tkd4real@hotmail.com
+  MYSQL_ROOT_PASSWORD: root
+  SPRING_PROFILES_ACTIVE: prod
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: accounts-env-prod
+  name: env-prod

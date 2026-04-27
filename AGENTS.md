@@ -949,7 +949,7 @@ All Docker Compose and Kubernetes manifests are organized in the `.docker/` dire
 ├── grafana/                # Grafana dashboards and datasources
 ├── loki/                   # Loki log aggregation configuration
 ├── prometheus/             # Prometheus metrics configuration
-├���─ tempo/                  # Tempo distributed tracing configuration
+├── tempo/                  # Tempo distributed tracing configuration
 ├── nginx/                  # Nginx gateway configuration
 ├── helm/                   # Helm charts for Kubernetes
 │   └── microservices-common/  # Common Helm chart (library)
@@ -970,76 +970,400 @@ All Docker Compose and Kubernetes manifests are organized in the `.docker/` dire
 #### **Docker Compose Architecture**
 
 **Managed Services** (Complete stack):
-- **Observability Stack**: Grafana, Prometheus, Tempo, Loki (with Alloy collector), MinIO (S3 backend)
-- **Message Brokers**: RabbitMQ (port 5672), Kafka (port 9092)
+- **Observability Stack**: Grafana, Prometheus, Tempo, Loki (read/write/backend), Alloy (log collector), MinIO (S3 backend for Loki)
+- **Message Brokers**: RabbitMQ (port 5672, management UI 15672), Kafka (KRaft mode, port 9092)
 - **Cache**: Redis (port 6379)
 - **Identity**: Keycloak (port 7080)
-- **Databases**: MySQL instances for accounts (3307), loans (3308), cards (3309)
-- **Microservices**: Eureka Server, ConfigServer, Gateway Server, Accounts, Cards, Loans, Message services
-- **Log Gateway**: Nginx (port 3100) - Load balancer for Loki read/write
+- **Databases**: MySQL LTS instances for accounts (3307), loans (3308), cards (3309)
+- **Infrastructure**: Eureka Server (8070), ConfigServer (8071), Gateway Server (8072)
+- **Business Services**: Accounts (8080), Cards (9000), Loans (8090), Message (9010)
+- **Routing**: Nginx (port 3100) - Load balancer for Loki read/write/backend requests
 
-**Docker Compose File Structure**:
-- Each service uses `common-config.yml` for shared network, resource limits, and base health checks
-- Database services inherit `microservice-db-config` for MySQL-specific health checks
-- App services inherit `microservice-base-config` for HTTP health checks and network config
-- All services configured with `depends_on` with `service_healthy` conditions for ordered startup
+**docker-compose.yml Structure**:
+```yaml
+# Base configuration definitions (via extends)
+services:
+  network-deploy-service:     # Network config, CPU/memory limits (0.5 cores, 512MB)
+  microservice-db-config:     # MySQL health checks (mysqladmin ping)
+  microservice-base-config:   # HTTP readiness probe (/actuator/health/readiness)
+  
+  # Individual services extend from base configs
+  accounts:
+    extends: microservice-base-config
+    depends_on:
+      eurekaserver: { condition: service_healthy }
+      accountsdb: { condition: service_healthy }
+      configserver: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      rabbit: { condition: service_healthy }
+```
+
+**common-config.yml**:
+- Centralized configuration reused by all services via `extends`
+- `network-deploy-service`: Sets network and resource limits (0.50 CPU cores, 512M memory)
+- `microservice-db-config`: MySQL health check pattern (checks port 3306 via mysqladmin)
+- `microservice-base-config`: HTTP health check for Spring Boot services (readiness endpoint, 30s start grace, 10s interval)
+
+**Health Check Pattern**:
+```yaml
+# Microservice health check (all business services)
+healthcheck:
+  test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:PORT/actuator/health/readiness || exit 1" ]
+  interval: 10s    # Check every 10 seconds
+  timeout: 5s      # Timeout if check takes >5s
+  retries: 10      # Container unhealthy after 10 consecutive failures
+  start_period: 30s # Grace period before first health check
+
+# Database health check (MySQL services)
+healthcheck:
+  test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+  interval: 10s
+  retries: 10
+  start_period: 10s
+```
+
+**Service Startup Order** (enforced by `depends_on: {service_healthy}` conditions):
+```
+1. Loki Storage Layer (MinIO)
+2. Observability Services (Prometheus, Tempo, Loki read/write/backend, Alloy, Grafana)
+3. Cache & Identity (Redis, Keycloak)
+4. Message Brokers (RabbitMQ, Kafka)
+5. Databases (accountsdb, loansdb, cardsdb)
+6. Service Discovery (Eureka Server)
+7. Configuration Server (ConfigServer, depends on RabbitMQ for bus refresh)
+8. Business Services (Accounts, Cards, Loans, Message - depend on Eureka, ConfigServer, databases)
+9. API Gateway (Gateway Server, depends on Eureka and Redis)
+```
+
+**Environment Loading**:
+```yaml
+# Services use env file stacking (right-to-left priority)
+env_file:
+  - .env              # Base configuration (checked in git)
+  - .env.${APP_ENV}   # Environment overrides (git-ignored, local/prod secrets)
+```
+
+Example: `docker compose up` with `APP_ENV=local` loads `.env` then `.env.local`
+
+**Resource Limits**:
+All services limited to 0.5 CPU cores and 512M memory (enforce in `common-config.yml`)
+- Prevents single service from consuming all host resources
+- Kubernetes can apply stricter limits via resource requests/limits
+
+**Network Configuration**:
+- Single bridge network: `microservices-network`
+- Internal service discovery via DNS (e.g., `accountsdb:3306` resolves within network)
+- External ports mapped only for LoadBalancer services (Keycloak, Eureka, Gateway, Grafana, Prometheus)
+
+**Kompose Labels** (for docker-compose → K8s conversion):
+
+All services in docker-compose.yml include `labels` section for Kompose tool hints:
+```yaml
+services:
+  keycloak:
+    labels:
+      kompose.service.type: LoadBalancer    # Expose as external LoadBalancer service
+  eurekaserver:
+    labels:
+      kompose.service.type: LoadBalancer
+  gatewayserver:
+    labels:
+      kompose.service.type: LoadBalancer
+  alloy:
+    labels:
+      kompose.volume.type: configMap        # Convert volume to K8s ConfigMap
+      kompose.serviceaccount-name: alloy    # Use dedicated service account
+```
+
+**Kompose Label Reference**:
+- `kompose.service.type: LoadBalancer` - Creates K8s LoadBalancer service (external IP)
+- `kompose.service.type: ClusterIP` - Creates internal K8s ClusterIP service (default)
+- `kompose.volume.type: configMap` - Converts Docker volume to K8s ConfigMap
+- `kompose.serviceaccount-name: {name}` - Assigns custom service account for RBAC
+
+#### **`.docker` Directory Structure & Configuration Files**
+
+**Root Level Files**:
+```
+.docker/
+├── docker-compose.yml           # Complete Docker Compose configuration (all services)
+├── common-config.yml            # Base service configurations (network, health checks, limits)
+├── .env                         # Base environment variables (public, in git)
+├── .env.local                   # Dev secrets (git-ignored: mysql root pwd, config server creds, keycloak pwd)
+├── .env.prod                    # Prod secrets (git-ignored: cloud credentials, git tokens, encryption keys)
+├── .data/                       # Local persistent data (git-ignored)
+│   ├── minio/                   # MinIO S3 storage for Loki logs
+│   └── [other volumes mounted to host]
+```
+
+**Configuration Subdirectories**:
+
+**`alloy/`** - Grafana Alloy configuration (observability agent):
+```
+alloy/
+├── alloy-local-config.yaml      # Local dev setup - collects logs from Docker containers
+└── alloy-k8s-config.yaml        # Kubernetes setup - collects logs from mounted volumes
+```
+- Reads container logs via `/var/run/docker.sock`
+- Sends to Loki write endpoint with tenant ID `tenant1`
+- Tag-based log routing by container name
+
+**`grafana/`** - Grafana dashboards and data sources:
+```
+grafana/
+└── datasource.yml               # Configures data sources (Prometheus, Loki, Tempo)
+                                 # Anonymous admin access enabled for local dev (GF_AUTH_ANONYMOUS_ORG_ROLE=Admin)
+```
+- Pre-configured to connect to: Prometheus (9090), Loki (3100), Tempo (3110)
+- Tenant ID: `tenant1` for Loki
+
+**`prometheus/`** - Metrics scraping configuration:
+```
+prometheus/
+└── prometheus.yml               # Scrape targets configuration
+```
+- Scrapes `/actuator/prometheus` endpoint from all Spring Boot services (10s interval)
+- Retention: 24 hours (default)
+- Targets: eurekaserver, configserver, accounts, cards, loans, gatewayserver, etc.
+
+**`tempo/`** - Distributed tracing backend:
+```
+tempo/
+└── tempo.yml                    # Tempo configuration (receivers, storage)
+```
+- OTEL receiver on port 4318 (gRPC)
+- Tempo operational UI on port 3110
+- Validates traces and forwards to backend storage
+
+**`loki/`** - Log aggregation system:
+```
+loki/
+└── loki-config.yaml             # Loki configuration (read/write/backend topology)
+```
+- **Three-part topology**:
+  - `read`: Query logs, expose port 3101
+  - `write`: Ingest logs from Alloy, expose port 3102
+  - `backend`: Manages index and object storage coordination
+- **Gateway (Nginx)**: Load balances traffic to read/write/backend on port 3100
+- **Storage**: MinIO S3 backend (bucket: `loki-data`)
+- **Index**: In-memory (default), not persisted
+
+**`nginx/`** - Reverse proxy for Loki:
+```
+nginx/
+└── nginx.conf                   # Nginx configuration for Loki gateway
+```
+- Routes requests to correct Loki target (read, write, or backend)
+- Exposes consolidated port 3100 for all Loki operations
+- Template-based config (substituted at container startup)
+
+**`helm/`** - Kubernetes Helm charts:
+```
+helm/
+└── microservices-common/        # Reusable Helm chart (library chart)
+    ├── Chart.yaml               # Chart metadata
+    ├── values.yaml              # Default values for all services
+    ├── charts/                  # Dependent charts
+    └── templates/               # Helm templates (generated K8s resources)
+```
+- **Library chart**: Contains common templates reused across services
+- `values.yaml`: Image tags, replicas, resource limits, environment variables
+- Deploy via: `helm install microservices .docker/helm/microservices-common -n microservices`
+
+**`k8s-generated/`** - Pre-generated Kubernetes manifests (from docker-compose or Helm):
+```
+k8s-generated/
+├── *-deployment.yaml            # Service deployments
+├── *-service.yaml               # Service definitions (ClusterIP, LoadBalancer)
+├── *-configmap.yaml             # ConfigMaps (env, prometheus config, etc.)
+├── *-persistentvolumeclaim.yaml  # PVCs (MySQL, Grafana, Keycloak, MinIO)
+├── *-rbac.yaml                  # RBAC (Alloy service account, cluster role)
+── *-external-service.yaml      # ExternalName services for external databases
+```
+- Generated via `kompose convert` or Helm templates
+- Can be deployed directly: `kubectl apply -f .docker/k8s-generated/`
+- Update manifests when docker-compose.yml changes
 
 #### **Running with Docker Compose**
 
-**Full Stack (Development)**:
-```bash
-cd .docker
+**Quick Start Commands** (from `.docker` directory):
 
-# With default .env
+```bash
+# 1. Set environment (dev/local/prod)
+cd .docker
+export APP_ENV=local    # Loads .env + .env.local
+
+# 2. Start full stack
 docker compose up --build
 
-# With specific environment
-docker compose --env-file .env.local up --build
-docker compose --env-file .env.prod up --build
+# 3. Tail logs
+docker compose logs -f
 
-# View all running services
-docker compose ps
-
-# Monitor logs
-docker compose logs -f                    # All services
-docker compose logs -f accounts           # Specific service
-docker compose logs -f accounts cards     # Multiple services
-```
-
-**Service-Level Commands**:
-```bash
-# Start specific services only
-docker compose up accounts cards loans
-
-# Restart services
-docker compose restart accounts
-docker compose restart
-
-# Stop services
-docker compose stop                       # Stop all
-docker compose down --volumes             # Stop and remove volumes
-
-# View service status
-docker compose ps
-docker compose health
-
-# Execute commands in containers
-docker compose exec accounts sh           # Interactive shell
-docker compose exec accountsdb mysql -u root -p accountsdb  # MySQL CLI
-```
-
-**Resource Management**:
-```bash
-# Check resource usage
-docker stats
-
-# Remove unused resources
+# 4. Stop everything
 docker compose down
-docker system prune
-docker volume prune
+docker compose down -v  # Also removes volumes (database data, Grafana config)
+```
 
-# Rebuild a specific service image
-docker compose build accounts --no-cache
+**Building New Images** (before first compose run):
+
+```bash
+# Option 1: Build inside compose (--build flag)
+docker compose up --build
+
+# Option 2: Pre-build using Maven/Jib
+cd ../accounts && mvn compile jib:dockerBuild
+cd ../cards && mvn compile jib:dockerBuild
+cd ../loans && mvn compile jib:dockerBuild
+cd ../message && mvn compile jib:dockerBuild
+cd ../eurekaserver && mvn compile jib:dockerBuild
+cd ../configserver && mvn compile jib:dockerBuild
+cd ../gatewayserver && mvn compile jib:dockerBuild
+
+# Option 3: Use docker-compose --build
+docker compose build
+docker compose up
+```
+
+**Service-Level Operations**:
+
+```bash
+# View running services
+docker compose ps                 # All services
+docker compose ps -a              # Including stopped
+
+# Start/stop specific services
+docker compose up -d accounts     # Start in background
+docker compose down rabbitmq      # Stop single service (depends_on ignored)
+docker compose restart accounts   # Quick restart
+
+# View logs
+docker compose logs accounts                    # Last 100 lines
+docker compose logs -f accounts                 # Follow mode
+docker compose logs --tail=50 accounts          # Last 50 lines
+docker compose logs accounts | grep ERROR       # Filter
+
+# Execute commands in running container
+docker compose exec accounts sh                           # Interactive shell
+docker compose exec accounts curl http://localhost:8080/actuator/health
+docker compose exec accountsdb mysql -u root -p accountsdb  # MySQL CLI
+docker compose exec redis redis-cli ping | grep PONG        # Redis CLI
+
+# View service config
+docker compose config                           # Merged YAML (all services, env substituted)
+docker compose config services                  # List service names
+docker compose images                           # Show image info
+```
+
+**Troubleshooting**:
+
+```bash
+# Check service status
+docker compose ps
+docker compose health                           # Show health checks
+
+# View detailed logs (errors)
+docker compose logs configserver | grep ERROR
+docker compose logs accountsdb | tail -20
+docker compose logs rabbit 2>&1 | grep WARN
+
+# Test connectivity between services
+docker compose exec accounts ping eurekaserver
+docker compose exec accounts wget http://eurekaserver:8070/actuator/health
+docker compose exec accountsdb mysqladmin ping -h localhost
+
+# Check environment variables inside container
+docker compose exec accounts printenv SPRING_PROFILES_ACTIVE
+docker compose exec accountsdb printenv MYSQL_ROOT_PASSWORD
+
+# Inspect network
+docker compose exec accounts ip addr show
+docker network ls
+docker network inspect microservices_microservices-network  # See container IPs
+
+# Resource usage
+docker stats                                    # CPU, memory, network
+docker compose stats                            # Only compose services (*Not all versions support)
+
+# Access service directly
+docker compose exec gateway curl http://loki-backend:3100/-/health
+docker compose exec grafana curl http://localhost:3000/api/health
+docker compose exec prometheus curl http://localhost:9090/-/healthy
+```
+
+**Database Operations**:
+
+```bash
+# Reset database (delete all data)
+docker compose down -v                          # Remove volumes
+docker compose up accountsdb                    # Recreate fresh
+
+# Backup database (export)
+docker compose exec accountsdb mysqldump -u root -p accountsdb > backup.sql
+
+# Restore database (import)
+docker compose exec -T accountsdb mysql -u root -p accountsdb < backup.sql
+
+# Direct schema inspection
+docker compose exec accountsdb mysql -u root -p accountsdb -e "SHOW TABLES;"
+docker compose exec accountsdb mysql -u root -p accountsdb -e "DESCRIBE accounts;"
+
+# Check Flyway migrations
+docker compose exec accountsdb mysql -u root -p accountsdb -e "SELECT * FROM flyway_schema_history;"
+```
+
+**Environment Configuration for Compose**:
+
+```bash
+# Use different environment files
+docker compose --env-file .env.local up        # Explicit env file
+docker compose --env-file .env.prod up         # Production
+
+# Override environment at command line
+MYSQL_ROOT_PASSWORD=mypassword docker compose up
+export CONFIG_SERVER_USER=admin && docker compose up
+
+# Check final environment (after .env merging)
+docker compose exec accounts env | grep SPRING
+docker compose exec accountsdb env | grep MYSQL
+```
+
+**Cleanup & Maintenance**:
+
+```bash
+# Remove unused Docker resources
+docker system prune                             # Remove dangling images, containers, networks
+docker system prune -a                          # Also remove unused images
+docker volume prune                             # Remove unused volumes
+docker image prune                              # Remove unused images
+
+# Remove all project resources
+docker compose down --remove-orphans            # Remove services no longer in compose
+docker compose down -v --remove-orphans         # Also remove volumes
+
+# Rebuild from scratch
+docker compose down -v
+docker image rm ggoutos/accounts:jib ggoutos/cards:jib ggoutos/loans:jib ggoutos/eurekaserver:jib ggoutos/configserver:jib ggoutos/gatewayserver:jib ggoutos/message:jib
+docker compose up --build
+```
+
+**Performance Tuning for Compose**:
+
+```bash
+# Reduce startup time (increase health check grace period in prod)
+# In docker-compose.yml:
+healthcheck:
+  start_period: 60s     # Give services more time to start
+
+# Resource constraints
+# In common-config.yml:
+deploy:
+  resources:
+    limits:
+      cpus: '1.0'       # Increase if services are throttled
+      memory: 1G        # Increase if OOMKilled
+
+# Parallel startup (remove some depends_on to parallelize)
+# But be careful - ensures correct startup order for stability
 ```
 
 **Health Checks**:
@@ -1176,9 +1500,301 @@ kubectl set image deployment/accounts \
   accounts=ggoutos/accounts:latest \
   -n microservices
 
-# Check health and readiness
-kubectl get pods -n microservices -o wide
 kubectl rollout status deployment/accounts -n microservices
+```
+
+**Kubernetes Manifest Structure & Deployment Details**:
+
+**K8s Manifest Inventory** (in `.docker/k8s-generated/`):
+
+| Type | Pattern | Count | Examples |
+|------|---------|-------|----------|
+| **Deployments** | `{service}-deployment.yaml` | 17 | accounts, cards, loans, message, eurekaserver, configserver, gatewayserver, rabbit, kafka, redis, prometheus, grafana, tempo, read, write, backend, keycloak |
+| **Services** | `{service}-service.yaml` | 17 | Same services (ClusterIP or LoadBalancer) |
+| **ConfigMaps** | `{service}-cm*.yaml` | 8+ | prometheus, grafana, tempo, read, write, backend, alloy, gateway, env config |
+| **PersistentVolumeClaims** | `{service}-data-pvc.yaml` | 5 | accounts, cards, loans, grafana, keycloak |
+| **RBAC** | `{service}-rbac.yaml` | 1 | alloy (service account, cluster role, cluster role binding) |
+| **External Services** | `{service}-external-service.yaml` | 3 | accountsdb, loansdb, cardsdb (optional: for external cloud databases) |
+
+**Total Manifest File Count**: ~50-60 YAML files covering all microservices and infrastructure
+
+**Kubernetes Deployment Architecture**:
+
+```
+microservices (namespace)
+│
+├─ ConfigMaps (Configuration)
+│  ├── env-configmap                     # Default environment
+│  ├── env-prod-configmap                # Production environment  
+│  ├── prometheus-cm0-configmap          # Prometheus scrape config (17 targets)
+│  ├── grafana-cm0-configmap             # Grafana datasources
+│  ├── tempo-cm0-configmap               # Tempo configuration
+│  ├── {read,write,backend}-cm0-configmap # Loki components
+│  ├── alloy-cm0-configmap               # Alloy log collection
+│  └── gateway-cm0-configmap              # Nginx Loki gateway
+│
+├─ External API Gateway (LoadBalancer)
+│  ├── gatewayserver-deployment
+│  ├── gatewayserver-service             # Type: LoadBalancer (External IP on port 8072)
+│  └── gateway-cm0-configmap
+│
+├─ Service Discovery & Configuration
+│  ├── eurekaserver-{deployment,service}
+│  ├── configserver-{deployment,service}
+│  └── keycloak-{deployment,service,data-pvc}
+│
+├─ Business Services (Internal: ClusterIP)
+│  ├── accounts-{deployment,service,data-pvc}
+│  ├── cards-{deployment,service,data-pvc}
+│  ├── loans-{deployment,service,data-pvc}
+│  └── message-{deployment,service}
+│
+├─ Infrastructure (Message Brokers, Cache)
+│  ├── rabbit-{deployment,service}       # RabbitMQ
+│  ├── kafka-{deployment,service}        # Kafka (KRaft mode)
+│  └── redis-{deployment,service}        # Redis cache
+│
+├─ Databases (Storage)
+│  ├── accountsdb-{deployment,service,data-pvc}
+│  ├── loansdb-{deployment,service,data-pvc}
+│  ├── cardsdb-{deployment,service,data-pvc}
+│  └── [*-external-service.yaml]         # For AWS RDS, Cloud SQL, etc.
+│
+└─ Observability Stack
+   ├─ Metrics Collection
+   │  ├── prometheus-{deployment,service,cm0-configmap}
+   │  └── [scrapes all services' /actuator/prometheus]
+   ├─ Tracing
+   │  ├── tempo-{deployment,service,cm0-configmap}
+   │  └── backend-{deployment,service}
+   ├─ Log Aggregation
+   │  ├── minio-{deployment,service}
+   │  ├── read-{deployment,service,cm0-configmap}
+   │  ├── write-{deployment,service,cm0-configmap}
+   │  ├── backend-{deployment,service,cm0-configmap}
+   │  ├── gateway-{deployment,service}
+   │  └── alloy-{deployment,service,rbac,cm0-configmap}
+   └─ Visualization
+      └── grafana-{deployment,service,data-pvc,cm0-configmap}
+
+Persistent Volumes (auto-provisioned):
+   ├── accounts-data-pvc
+   ├── cards-data-pvc
+   ├── loans-data-pvc
+   ├── grafana-data-pvc
+   ├── keycloak-data-pvc
+   └── minio-data-pvc (implied by Loki S3 backend)
+```
+
+**Kubernetes Service Network**:
+
+- **LoadBalancer Services** (external IP for outside cluster):
+  - `gatewayserver-service` - Main entry point (port 8072)
+  - `eurekaserver-service` - Optional external Eureka access (port 8070)
+  - `grafana-service` - Monitoring dashboard (port 3000)
+  - `prometheus-service` - Metrics endpoint (port 9090)
+
+- **ClusterIP Services** (internal DNS only):
+  - All business services (accounts, cards, loans, message)
+  - All infrastructure services (rabbit, kafka, redis)
+  - All database services (accountsdb, loansdb, cardsdb)
+  - All observability services (tempo, loki read/write/backend, alloy)
+
+- **DNS Naming Convention**:
+  - Format: `{service-name}-service.{namespace}.svc.cluster.local`
+  - Example: `accountsdb-service.microservices.svc.cluster.local:3306`
+  - Short form (within namespace): `accountsdb-service:3306`
+
+**Deployment Strategies**:
+
+**Strategy 1: Direct Manifest Application**
+```bash
+# Setup namespace
+kubectl create namespace microservices
+kubectl config set-context --current --namespace=microservices
+
+# Apply all manifests (order doesn't matter, K8s handles dependencies)
+kubectl apply -f .docker/k8s-generated/
+
+# Verify deployment
+kubectl get pods -w                                   # Watch startup
+kubectl get svc                                       # See services, external IPs
+kubectl get pvc                                       # See persistent volumes
+
+# Expose services for local testing (no LoadBalancer ingress)
+kubectl port-forward svc/gatewayserver 8072:8072
+kubectl port-forward svc/grafana 3000:3000
+kubectl port-forward svc/prometheus 9090:9090
+```
+
+**Strategy 2: Helm Chart Deployment**
+```bash
+# Install from Helm chart
+kubectl create namespace microservices
+cd .docker/helm
+
+# Install with defaults
+helm install microservices microservices-common \
+  --namespace microservices \
+  --values microservices-common/values.yaml
+
+# Install with overrides
+helm install microservices microservices-common \
+  --namespace microservices \
+  --set image.tag=latest \
+  --set replicas.accounts=3 \
+  --set prometheus.retention=48h
+
+# Verify
+helm list -n microservices
+helm status microservices -n microservices
+kubectl get all -n microservices
+```
+
+**Strategy 3: Generate K8s from docker-compose.yml**
+```bash
+# Install kompose (one-time: https://kompose.io/installation/)
+# Convert Docker Compose to K8s manifests
+cd .docker
+kompose convert -f docker-compose.yml -o k8s-generated-new/
+
+# Review generated manifests (may need tweaks)
+# Apply when ready
+kubectl apply -f k8s-generated-new/
+```
+
+**Database Configuration Options**:
+
+**Option A: In-Cluster MySQL (Default)**
+```bash
+# Pre-generated manifests handle deployment
+kubectl apply -f accountsdb-deployment.yaml
+kubectl apply -f accountsdb-service.yaml
+
+# Connection from apps
+# Service DNS: accountsdb-service.microservices.svc.cluster.local:3306
+# Spring config: jdbc:mysql://accountsdb-service:3306/accountsdb
+# (Short DNS works within same namespace)
+```
+
+**Option B: External Cloud Database (RDS, Cloud SQL, GCP)**
+```bash
+# Example: AWS RDS MySQL instance
+# Use ExternalName service to map external database
+
+# Edit or create ExternalName service:
+apiVersion: v1
+kind: Service
+metadata:
+  name: accountsdb-service
+  namespace: microservices
+spec:
+  type: ExternalName
+  externalName: mydb-instance-123.us-east-1.rds.amazonaws.com
+  ports:
+  - port: 3306
+    targetPort: 3306
+
+# Apply
+kubectl apply -f accountsdb-external-service.yaml
+
+# Spring config (same as in-cluster!)
+# jdbc:mysql://accountsdb-service:3306/accountsdb
+# No code changes needed - network abstraction handles it
+```
+
+**Option C: External Database with Credentials**
+```bash
+# Create secret for database password
+kubectl create secret generic db-credentials \
+  --from-literal=password=MySecurePassword123 \
+  -n microservices
+
+# Reference in deployment env:
+# env:
+#   - name: SPRING_DATASOURCE_PASSWORD
+#     valueFrom:
+#       secretKeyRef:
+#         name: db-credentials
+#         key: password
+```
+
+**Scaling & Advanced Operations**:
+
+```bash
+# Scale a service
+kubectl scale deployment accounts --replicas=3 -n microservices
+
+# Check pod autoscaling (requires HorizontalPodAutoscaler manifest)
+kubectl get hpa -n microservices
+kubectl autoscale deployment accounts --min=1 --max=5 --cpu-percent=80 -n microservices
+
+# Rolling update with new image
+kubectl set image deployment/accounts \
+  accounts=ggoutos/accounts:v1.2.3 \
+  -n microservices \
+  --record
+
+# Check rollout status
+kubectl rollout status deployment/accounts -n microservices
+
+# Rollback to previous version
+kubectl rollout undo deployment/accounts -n microservices
+kubectl rollout history deployment/accounts -n microservices
+
+# Edit resource live (careful!)
+kubectl edit deployment accounts -n microservices
+```
+
+**Monitoring Kubernetes Health**:
+
+```bash
+# View nodes
+kubectl get nodes
+kubectl top nodes                                     # Resource usage
+kubectl describe node <node-name>
+
+# View all resources in namespace
+kubectl get all -n microservices
+
+# Check pod conditions
+kubectl get pods -n microservices -o wide
+kubectl get pods -n microservices -o json | jq '.items[].status.conditions'
+
+# View events (admission failures, pod failures, etc.)
+kubectl get events -n microservices --sort-by='.lastTimestamp'
+kubectl get events -n microservices | grep Warning
+kubectl get events -n microservices | grep Error
+
+# Check PVC status
+kubectl get pvc -n microservices
+kubectl describe pvc accounts-data-pvc -n microservices
+
+# Resource quotas & limits
+kubectl get resourcequotas -n microservices
+kubectl describe resourcequota -n microservices
+```
+
+**Helm Configuration Management**:
+
+```bash
+# Chart values inspection
+helm show values microservices-common                  # Chart defaults
+helm get values microservices -n microservices        # Deployed values
+helm get manifest microservices -n microservices      # Final K8s manifests
+
+# Upgrade with new values
+helm upgrade microservices microservices-common \
+  --namespace microservices \
+  -f custom-values.yaml
+
+# Dry-run (see what would change)
+helm upgrade microservices microservices-common \
+  --namespace microservices \
+  --dry-run --debug
+
+# Uninstall
+helm uninstall microservices -n microservices
 ```
 
 #### **Environment Configuration**
