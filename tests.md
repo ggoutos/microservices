@@ -10,13 +10,13 @@ Here is a comprehensive **Table of Contents** for the `tests.md` file:
 
 1. [Testing Pyramid](#-testing-pyramid)
 2. [Recommended Tech Stack](#-recommended-tech-stack)
-3. [Unit Tests — Service Layer](#1️⃣-unit-tests--service-layer)
-4. [Web Layer Tests — Controllers](#2️⃣-web-layer-tests--controllers)
-5. [Repository Tests — Data Layer](#3️⃣-repository-tests--data-layer)
-6. [Integration Tests — Testcontainers (Real DB)](#4️⃣-integration-tests--testcontainers-real-db)
-7. [Feign Client Tests — WireMock](#5️⃣-feign-client-tests--wiremock)
-8. [Exception Handler Tests](#6️⃣-exception-handler-tests)
-9. [Code Coverage with JaCoCo](#7️⃣-code-coverage-with-jacoco)
+3. [Unit Tests — Service Layer](#1-unit-tests--service-layer)
+4. [Web Layer Tests — Controllers](#2-web-layer-tests--controllers)
+5. [Repository Tests — Data Layer](#3-repository-tests--data-layer)
+6. [Integration Tests — Testcontainers (Real DB)](#4-integration-tests--testcontainers-real-db)
+7. [Feign Client Tests — WireMock](#5-feign-client-tests--wiremock)
+8. [Exception Handler Tests](#6-exception-handler-tests)
+9. [Code Coverage with JaCoCo](#7-code-coverage-with-jacoco)
 10. [Industry Patterns Summary](#-industry-patterns-summary)
 11. [Recommended Coverage Targets](#-recommended-coverage-targets)
 12. [Test Annotations Reference](#-test-annotations-reference)
@@ -35,14 +35,14 @@ Here is a comprehensive **Table of Contents** for the `tests.md` file:
 A healthy test suite follows the **Testing Pyramid** principle:
 
 ```
-/\
+        /\
        /  \
       / E2E\        ← Few, slow, expensive
      /------\
-    /  Integ  \     ← Moderate, test boundaries
-   /------------\
-  /  Unit Tests  \  ← Many, fast, cheap
- /________________\
+    / Integ  \      ← Moderate, test boundaries
+   /----------\
+  / Unit Tests \    ← Many, fast, cheap
+ /______________\
 ```
 
 

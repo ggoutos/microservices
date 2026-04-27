@@ -952,11 +952,14 @@ All Docker Compose and Kubernetes manifests are organized in the `.docker/` dire
 ├── tempo/                  # Tempo distributed tracing configuration
 ├── nginx/                  # Nginx gateway configuration
 ├── helm/                   # Helm charts for Kubernetes
-│   └── microservices-common/  # Common Helm chart (library)
-│       ├── Chart.yaml
-│       ├── values.yaml
-│       ├── charts/
-│       └── templates/
+│   ├── eazybank-common/        # Common templates (Deployment, Service, ConfigMap)
+│   ├── eazybank-services/      # Individual service charts (accounts, cards, loans, etc.)
+│   ├── environments/           # Environment-specific umbrella charts (dev-env, prod-env, qa-env)
+│   ├── {infrastructure}/       # Infrastructure charts (grafana, kafka, keycloak, kube-prometheus, etc.)
+│   │   ├── Chart.yaml
+│   │   ├── values.yaml
+│   │   ├── charts/
+│   │   └── templates/
 ├── k8s-generated/          # Pre-generated Kubernetes manifests
 │   ├── *-deployment.yaml   # Service deployments
 │   ├── *-service.yaml      # Service definitions
@@ -1157,18 +1160,30 @@ nginx/
 - Exposes consolidated port 3100 for all Loki operations
 - Template-based config (substituted at container startup)
 
-**`helm/`** - Kubernetes Helm charts:
+**`helm/`** - Kubernetes Helm charts (multi-chart architecture):
 ```
 helm/
-└── microservices-common/        # Reusable Helm chart (library chart)
-    ├── Chart.yaml               # Chart metadata
-    ├── values.yaml              # Default values for all services
-    ├── charts/                  # Dependent charts
-    └── templates/               # Helm templates (generated K8s resources)
+├── eazybank-common/             # Reusable common templates (application chart)
+│   ├── Chart.yaml               # Chart metadata
+│   ├── values.yaml              # Default values (empty, inherited by services)
+│   └── templates/               # Common templates: deployment.yaml, service.yaml, configmap.yaml
+│
+├── eazybank-services/           # Individual service charts
+│   ├── accounts/, cards/, loans/, message/, configserver/, eurekaserver/, gatewayserver/
+│   └── Each: Chart.yaml, values.yaml, charts/ (eazybank-common dependency)
+│
+├── environments/                # Environment-specific umbrella charts
+│   ├── dev-env/, prod-env/, qa-env/
+│   └── Each composes services via Chart dependencies
+│
+└── {infrastructure}/            # Infrastructure charts (grafana, kafka, keycloak, etc.)
+    ├── Chart.yaml, values.yaml, templates/
+    └── Deploy independently: `helm install grafana grafana/`
 ```
-- **Library chart**: Contains common templates reused across services
-- `values.yaml`: Image tags, replicas, resource limits, environment variables
-- Deploy via: `helm install microservices .docker/helm/microservices-common -n microservices`
+- **eazybank-common**: Provides reusable K8s templates for all microservices
+- **eazybank-services/{service}**: Individual service charts that depend on eazybank-common
+- **environments/{env}-env**: Umbrella charts composing all services for complete environments
+- Deploy via: `helm install eazybank .docker/helm/environments/dev-env -n microservices`
 
 **`k8s-generated/`** - Pre-generated Kubernetes manifests (from docker-compose or Helm):
 ```
@@ -1424,7 +1439,7 @@ microservices/
 ├── Infrastructure Services
 │   ├── rabbit-{deployment,service}.yaml
 │   ├── kafka-{deployment,service}.yaml
-│   ��── redis-{deployment,service}.yaml
+│   ├── redis-{deployment,service}.yaml
 │   ├── keycloak-{deployment,service,data-pvc}.yaml
 ├── Databases
 │   ├── accountsdb-{deployment,service,external-service,data-pvc}.yaml
@@ -1441,11 +1456,11 @@ microservices/
 
 **Deploy to Kubernetes**:
 ```bash
-# Install Helm (if deploying via Helm)
-helm install microservices .docker/helm/microservices-common \
+# Install Helm (environment-specific deployment)
+helm install eazybank .docker/helm/environments/dev-env \
   --namespace microservices \
   --create-namespace \
-  -f .docker/helm/microservices-common/values.yaml
+  -f .docker/helm/environments/dev-env/values.yaml
 
 # Or apply pre-generated K8s manifests directly
 kubectl create namespace microservices
@@ -1627,28 +1642,42 @@ kubectl port-forward svc/grafana 3000:3000
 kubectl port-forward svc/prometheus 9090:9090
 ```
 
-**Strategy 2: Helm Chart Deployment**
+**Strategy 2: Helm Chart Deployment** (Environment-based)
 ```bash
-# Install from Helm chart
+# Install from umbrella chart for specific environment
 kubectl create namespace microservices
-cd .docker/helm
+cd .docker/helm/environments
 
-# Install with defaults
-helm install microservices microservices-common \
+# Install development environment (composes all services)
+helm install eazybank dev-env \
   --namespace microservices \
-  --values microservices-common/values.yaml
+  --values dev-env/values.yaml
 
-# Install with overrides
-helm install microservices microservices-common \
+# Install production environment
+helm install eazybank prod-env \
   --namespace microservices \
-  --set image.tag=latest \
-  --set replicas.accounts=3 \
-  --set prometheus.retention=48h
+  --values prod-env/values.yaml
 
-# Verify
+# Install with overrides (e.g., change image tag)
+helm install eazybank dev-env \
+  --namespace microservices \
+  --set accounts.image.tag=latest \
+  --set cards.replicaCount=3
+
+# Verify deployment
 helm list -n microservices
-helm status microservices -n microservices
+helm status eazybank -n microservices
 kubectl get all -n microservices
+```
+
+**Individual Service Deployment** (if needed):
+```bash
+# Install single service (requires eazybank-common chart)
+cd .docker/helm/eazybank-services
+helm install accounts accounts \
+  --namespace microservices \
+  --values accounts/values.yaml \
+  --set image.tag=s14
 ```
 
 **Strategy 3: Generate K8s from docker-compose.yml**
@@ -1779,22 +1808,72 @@ kubectl describe resourcequota -n microservices
 
 ```bash
 # Chart values inspection
-helm show values microservices-common                  # Chart defaults
-helm get values microservices -n microservices        # Deployed values
-helm get manifest microservices -n microservices      # Final K8s manifests
+helm show values .docker/helm/eazybank-common              # Common chart defaults (empty)
+helm show values .docker/helm/eazybank-services/accounts   # Service chart defaults
+helm show values .docker/helm/environments/dev-env         # Environment chart (with global values)
+helm show values .docker/helm/environments/dev-env | grep -A 20 "global:"  # Global config
 
-# Upgrade with new values
-helm upgrade microservices microservices-common \
+# Helm dependency management
+helm dependency list .docker/helm/eazybank-services/accounts     # Show eazybank-common dependency
+helm dependency update .docker/helm/eazybank-services/accounts   # Update charts/ directory
+
+# Deployed values inspection
+helm get values eazybank -n microservices                  # Show values used in deployment
+helm get values eazybank -n microservices --all            # Include defaults
+helm get manifest eazybank -n microservices               # Final rendered K8s manifests
+helm get manifest eazybank -n microservices | grep kind   # See all K8s object types
+
+# Upgrade with new values (environment chart)
+helm upgrade eazybank .docker/helm/environments/dev-env \
   --namespace microservices \
-  -f custom-values.yaml
+  --values custom-values.yaml
 
-# Dry-run (see what would change)
-helm upgrade microservices microservices-common \
+# Dry-run to preview changes
+helm upgrade eazybank .docker/helm/environments/dev-env \
   --namespace microservices \
   --dry-run --debug
 
-# Uninstall
-helm uninstall microservices -n microservices
+# Dry-run install (before first deployment)
+helm install eazybank .docker/helm/environments/dev-env \
+  --namespace microservices \
+  --dry-run --debug > manifest-preview.yaml
+
+# Uninstall all services
+helm uninstall eazybank -n microservices
+```
+
+**Environment-Specific Values** (in `environments/{env}-env/values.yaml`):
+```yaml
+# dev-env/values.yaml - Global values propagated to all service charts
+global:
+  configMapName: eazybankdev-configmap
+  activeProfile: default
+  configServerURL: configserver:http://configserver:8071/
+  eurekaServerURL: http://eurekaserver:8070/eureka/
+  keyCloakURL: http://keycloak.default.svc.cluster.local:80/realms/master/protocol/openid-connect/certs
+  openTelemetryJavaAgent: "-javaagent:/app/libs/opentelemetry-javaagent-2.22.0.jar"
+  otelExporterEndPoint: http://tempo.default.svc.cluster.local:4318
+```
+
+**Service Chart Values** (in `eazybank-services/{service}/values.yaml`):
+```yaml
+# Example: accounts/values.yaml
+deploymentName: accounts-deployment
+serviceName: accounts
+appLabel: accounts
+appName: accounts
+replicaCount: 1
+image:
+  repository: eazybytes/accounts
+  tag: s14  # Can be overridden at install time: --set accounts.image.tag=latest
+containerPort: 8080
+service:
+  type: ClusterIP
+  port: 8080
+appname_enabled: true
+eureka_enabled: true
+kafka_enabled: true
+otel_enabled: true
 ```
 
 #### **Environment Configuration**
