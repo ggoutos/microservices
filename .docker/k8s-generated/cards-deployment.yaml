@@ -26,7 +26,7 @@ spec:
                 name: env
             - configMapRef:
                 name: env-prod
-          image: ggoutos/cards:jib
+          image: ggoutos/cards:jib-k8s
           livenessProbe:
             exec:
               command:

@@ -139,7 +139,7 @@
                     <version>${jib-maven-plugin.version}</version>
                     <configuration>
                         <to>
-                            <image>ggoutos/${project.artifactId}:jib</image>
+                            <image>ggoutos/${project.artifactId}:jib-k8s</image>
                         </to>
                         <from>
                             <image>eclipse-temurin:25-jre-alpine-3.21</image>

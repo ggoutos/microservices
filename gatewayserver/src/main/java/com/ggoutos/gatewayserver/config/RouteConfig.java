@@ -44,9 +44,9 @@ public class RouteConfig {
     @Bean
     public RouteLocator routeLocator(RouteLocatorBuilder routeLocatorBuilder) {
         return routeLocatorBuilder.routes()
-                .route(createRoute("accounts"))
-                .route(createRoute("loans"))
-                .route(createRoute("cards"))
+                .route(createRoute("accounts", 8080))
+                .route(createRoute("loans", 8090))
+                .route(createRoute("cards", 9000))
                 .build();
     }
 
@@ -59,13 +59,14 @@ public class RouteConfig {
      * Incoming: /ggoutos/accounts/api/v1/fetch
      * ↓  Path matches /ggoutos/accounts/**
      * ↓  Rewrite strips prefix → /api/v1/fetch
-     * ↓  Forward to lb://ACCOUNTS (load-balanced)
+     * ↓  Forward to http://accounts:8080/api/v1/fetch
      * Upstream microservice receives: /api/v1/fetch
      *
      * @param service the name of the service for which the route is created
+     * @param port
      * @return a {@link Function} that takes a {@link PredicateSpec} and returns a {@link Buildable} route
      */
-    private Function<PredicateSpec, Buildable<Route>> createRoute(String service) {
+    private Function<PredicateSpec, Buildable<Route>> createRoute(String service, int port) {
         return p -> p
                 .path("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/**")
                 .filters(f -> f.rewritePath("/" + DNS_PREFIX + "/" + service.toLowerCase() + "/(?<segment>.*)", "/${segment}")
@@ -80,7 +81,7 @@ public class RouteConfig {
                 )
                 .metadata(CONNECT_TIMEOUT_ATTR, 1000)
                 .metadata(RESPONSE_TIMEOUT_ATTR, 1000)
-                .uri("lb://" + service.toUpperCase());
+                .uri("http://" + service.toLowerCase() + ":" + port);
     }
 
 

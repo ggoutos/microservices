@@ -3,7 +3,7 @@ data:
   COMPOSE_PROJECT_NAME: microservices
   CONFIG_SERVER_HOST: configserver
   EUREKA_SERVER_HOST: eurekaserver
-  IMAGE_TAG: jib
+  IMAGE_TAG: jib-k8s
   JAVA_TOOL_OPTIONS: -javaagent:/app/libs/opentelemetry-javaagent-2.26.1.jar
   KAFKA_HOST: kafka
   KEYCLOAK_HOST: keycloak

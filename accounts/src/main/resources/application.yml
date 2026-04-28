@@ -56,6 +56,10 @@ spring:
     username: ${SPRING_RABBITMQ_USER:guest}
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
   cloud:
+    kubernetes:
+      discovery:
+        all-namespaces: true
+        discovery-server-url: ${SPRING.CLOUD.KUBERNETES.DISCOVERY.DISCOVERY-SERVER-URL:http://spring-cloud-kubernetes-discoveryserver:80/}
     config:
       uri: http://${CONFIG_SERVER_HOST:localhost}:8071
       username: ${CONFIG_SERVER_USER}
@@ -99,15 +103,6 @@ spring:
                   acks: all
   config:
     import: "configserver:${spring.cloud.config.uri}"
-
-eureka:
-  instance:
-    prefer-ip-address: true
-  client:
-    register-with-eureka: true
-    fetch-registry: true
-    service-url:
-      defaultZone: http://${EUREKA_SERVER_HOST:localhost}:8070/eureka/
 
 resilience4j.circuitbreaker:
   configs:

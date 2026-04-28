@@ -28,7 +28,7 @@ spec:
                 name: env
             - configMapRef:
                 name: env-prod
-          image: ggoutos/eurekaserver:jib
+          image: ggoutos/eurekaserver:jib-k8s
           livenessProbe:
             exec:
               command:
