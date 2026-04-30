@@ -1,0 +1,214 @@
+# RequestAuthentication - JWT Validation
+# These policies validate JWT tokens (complementing Keycloak OAuth2)
+# 
+# Option A (Recommended): Keep OAuth2 at Gateway level
+#   - Gateway validates JWT
+#   - Pass validated identity via headers to backend
+#   - Use mTLS for service-to-service encryption
+#
+# Option B: End-to-End OAuth2 with Istio
+#   - Validate JWT at each service using Istio RequestAuthentication
+#   - More secure but adds complexity
+
+# ============================================
+# Keycloak JWT Validation for GatewayServer
+# Validate JWT tokens at the gateway level
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: keycloak-jwt-gatewayserver
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: request-authentication-gatewayserver
+spec:
+  # Apply to gatewayserver pods
+  selector:
+    matchLabels:
+      app: gatewayserver
+  
+  # JWT validation rules
+  jwtRules:
+  # Keycloak JWT validation
+  - issuer: "http://keycloak:8080/realms/master"
+    jwksUri: "http://keycloak:8080/realms/master/protocol/openid-connect/certs"
+    # Forward the original token to the application
+    outputPayloadToHeader: "x-jwt-payload"
+    # Token locations to check
+    fromHeaders:
+    - name: Authorization
+      prefix: "Bearer "
+    - name: x-access-token
+    fromParams:
+    - token
+  
+  # Optional: Validate audiences
+  # audiences:
+  #   - account
+  #   - cards
+  #   - loans
+
+---
+# ============================================
+# Keycloak JWT Validation for Accounts Service
+# (Optional - if implementing end-to-end JWT validation)
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: keycloak-jwt-accounts
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: request-authentication-accounts
+spec:
+  selector:
+    matchLabels:
+      app: accounts
+  jwtRules:
+  - issuer: "http://keycloak:8080/realms/master"
+    jwksUri: "http://keycloak:8080/realms/master/protocol/openid-connect/certs"
+    outputPayloadToHeader: "x-jwt-payload"
+    fromHeaders:
+    - name: Authorization
+      prefix: "Bearer "
+
+---
+# ============================================
+# Keycloak JWT Validation for Cards Service
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: keycloak-jwt-cards
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: request-authentication-cards
+spec:
+  selector:
+    matchLabels:
+      app: cards
+  jwtRules:
+  - issuer: "http://keycloak:8080/realms/master"
+    jwksUri: "http://keycloak:8080/realms/master/protocol/openid-connect/certs"
+    outputPayloadToHeader: "x-jwt-payload"
+
+---
+# ============================================
+# Keycloak JWT Validation for Loans Service
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: keycloak-jwt-loans
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: request-authentication-loans
+spec:
+  selector:
+    matchLabels:
+      app: loans
+  jwtRules:
+  - issuer: "http://keycloak:8080/realms/master"
+    jwksUri: "http://keycloak:8080/realms/master/protocol/openid-connect/certs"
+    outputPayloadToHeader: "x-jwt-payload"
+
+---
+# ============================================
+# Keycloak JWT Validation for Message Service
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: keycloak-jwt-message
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: request-authentication-message
+spec:
+  selector:
+    matchLabels:
+      app: message
+  jwtRules:
+  - issuer: "http://keycloak:8080/realms/master"
+    jwksUri: "http://keycloak:8080/realms/master/protocol/openid-connect/certs"
+    outputPayloadToHeader: "x-jwt-payload"
+
+---
+# ============================================
+# Require JWT for All Services (Optional)
+# Uncomment to require JWT validation on all services
+# ============================================
+# apiVersion: security.istio.io/v1beta1
+# kind: AuthorizationPolicy
+# metadata:
+#   name: require-jwt-all
+#   namespace: microservices
+# spec:
+#   rules:
+#   # Require valid JWT for all requests
+#   - from:
+#     - source:
+#         requestPrincipals: ["*"]
+#     to:
+#     - operation:
+#         notPaths: ["/actuator/health/*", "/actuator/info"]
+
+---
+# ============================================
+# Require JWT for Specific Service
+# Example: Require JWT for accounts service
+# ============================================
+# apiVersion: security.istio.io/v1beta1
+# kind: AuthorizationPolicy
+# metadata:
+#   name: require-jwt-accounts
+#   namespace: microservices
+# spec:
+#   selector:
+#     matchLabels:
+#       app: accounts
+#   rules:
+#   - from:
+#     - source:
+#         requestPrincipals: ["*"]
+#     to:
+#     - operation:
+#         methods: ["GET", "POST", "PUT", "DELETE"]
+#         notPaths: ["/actuator/health/*"]
+
+---
+# ============================================
+# Instructions for JWT Integration
+# ============================================
+# To enable end-to-end JWT validation:
+#
+# 1. Apply RequestAuthentication resources:
+#    kubectl apply -f security/request-authentication.yaml
+#
+# 2. Create AuthorizationPolicy to require JWT:
+#    Uncomment the "require-jwt-*" policies above
+#
+# 3. Verify JWT validation:
+#    # Without token (should fail):
+#    curl http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234567890
+#
+#    # With token (should succeed):
+#    TOKEN=$(curl -X POST http://keycloak:8080/realms/master/protocol/openid-connect/token \
+#      -H 'Content-Type: application/x-www-form-urlencoded' \
+#      -d 'grant_type=client_credentials&client_id=<client_id>&client_secret=<secret>' \
+#      | jq -r '.access_token')
+#    curl -H "Authorization: Bearer $TOKEN" \
+#      http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234567890
+#
+# 4. Monitor JWT validation:
+#    kubectl logs -n istio-system deployment/istiod | grep jwt
+#
+# Note: For the EazyBank platform, the recommended approach is:
+#   - Keep OAuth2 JWT validation at Spring Cloud Gateway (existing)
+#   - Use mTLS for service-to-service encryption (PeerAuthentication)
+#   - Use AuthorizationPolicy for service-to-service access control
+#   - Only enable RequestAuthentication if you need end-to-end JWT validation

@@ -1,0 +1,37 @@
+# Istio System Namespace
+# This namespace hosts the Istio control plane components
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    istio-injection: disabled  # Disable auto-injection for system components
+    app.kubernetes.io/name: istio-system
+    app.kubernetes.io/part-of: istio
+---
+# Microservices Namespace with Istio Sidecar Injection Enabled
+# All pods in this namespace will automatically get an Istio sidecar injected
+# Exception: Eureka Server (injection disabled via pod annotation)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: microservices
+  labels:
+    istio-injection: enabled  # Enable auto-injection for this namespace
+    app.kubernetes.io/name: microservices
+    app.kubernetes.io/part-of: eazybank
+  annotations:
+    # Prometheus scrape annotation for namespace-level metrics
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "15020"
+---
+# Optional: Create a separate namespace for Istio observability components
+# (if not using existing observability stack)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-observability
+  labels:
+    istio-injection: disabled
+    app.kubernetes.io/name: istio-observability
+    app.kubernetes.io/part-of: istio

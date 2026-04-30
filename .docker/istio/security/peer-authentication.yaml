@@ -1,0 +1,141 @@
+# PeerAuthentication - mTLS Configuration for EazyBank Platform
+# This file configures mutual TLS (mTLS) for service-to-service communication
+# 
+# Phases:
+#   Phase 1 (Initial): PERMISSIVE mode - allows both mTLS and plain text
+#   Phase 2 (After validation): STRICT mode - enforces mTLS for all services
+
+# ============================================
+# Default PeerAuthentication for microservices namespace
+# This applies to all services in the namespace
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: peer-authentication
+spec:
+  # mTLS mode for the namespace
+  # STRICT: Only accept mTLS connections (production)
+  # PERMISSIVE: Accept both mTLS and plain text (migration phase)
+  # DISABLE: Disable mTLS (not recommended)
+  mtls:
+    mode: STRICT  # Change to PERMISSIVE for initial migration
+  
+  # Optional: Port-level mTLS override
+  # Uncomment to disable mTLS for specific ports (e.g., databases)
+  # portLevelMtls:
+  #   3306:
+  #     mode: DISABLE  # Disable mTLS for MySQL (handled by database)
+  #   3307:
+  #     mode: DISABLE
+  #   3308:
+  #     mode: DISABLE
+  #   3309:
+  #     mode: DISABLE
+  #   6379:
+  #     mode: DISABLE  # Redis
+  #   5672:
+  #     mode: DISABLE  # RabbitMQ
+
+---
+# ============================================
+# PeerAuthentication for Eureka Server
+# Eureka uses peer-to-peer replication and may conflict with Istio mTLS
+# We disable mTLS for Eureka or use PERMISSIVE mode
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: eurekaserver-mtls
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: peer-authentication-eurekaserver
+spec:
+  # Only apply to Eureka Server pods
+  selector:
+    matchLabels:
+      app: eurekaserver
+  mtls:
+    mode: PERMISSIVE  # Use PERMISSIVE for Eureka to avoid issues
+    # Alternatively, disable sidecar injection for Eureka (recommended)
+    # See: .docker/helm/eazybank-services/eurekaserver/templates/deployment.yaml
+
+---
+# ============================================
+# PeerAuthentication for Database Services
+# Disable mTLS for database connections
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: database-mtls
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: peer-authentication-database
+spec:
+  # Apply to database services
+  selector:
+    matchLabels:
+      app: accountsdb
+  mtls:
+    mode: DISABLE  # Databases don't support mTLS
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: database-mtls-cards
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: peer-authentication-database-cards
+spec:
+  selector:
+    matchLabels:
+      app: cardsdb
+  mtls:
+    mode: DISABLE
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: database-mtls-loans
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: peer-authentication-database-loans
+spec:
+  selector:
+    matchLabels:
+      app: loansdb
+  mtls:
+    mode: DISABLE
+
+---
+# ============================================
+# Instructions for Migration
+# ============================================
+# To migrate from PERMISSIVE to STRICT mode:
+#
+# 1. First, ensure all services have sidecar injected:
+#    kubectl get pods -n microservices -o jsonpath='{.items[*].spec.containers[*].name}' | grep istio-proxy
+#
+# 2. Verify mTLS is working in PERMISSIVE mode:
+#    istioctl authn tls-check -n microservices
+#
+# 3. Update the default PeerAuthentication to STRICT:
+#    kubectl patch peerauthentication default -n microservices --type='json' \
+#      -p='[{"op": "replace", "path": "/spec/mtls/mode", "value":"STRICT"}]'
+#
+# 4. Verify all services are using mTLS:
+#    istioctl authn tls-check -n microservices
+#
+# 5. Monitor for any connection issues:
+#    kubectl logs -n istio-system deployment/istiod

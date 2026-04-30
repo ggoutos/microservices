@@ -26,3 +26,21 @@ eureka_enabled: false
 resouceserver_enabled: false
 otel_enabled: true
 kafka_enabled: false
+
+# Istio Configuration
+# Disable Istio sidecar injection for Eureka Server
+# Eureka uses peer-to-peer replication which may conflict with Istio mTLS
+istio_enabled: false
+istio:
+  # Sidecar configuration (not used since istio_enabled is false)
+  sidecar:
+    inject: false
+    resources:
+      cpu: 100m
+      memory: 128Mi
+  # Disable mTLS for Eureka
+  mtls:
+    mode: PERMISSIVE  # or DISABLE
+  # Exclude ports from Istio interception
+  excludeInboundPorts: "8070"
+  excludeOutboundPorts: "8070"

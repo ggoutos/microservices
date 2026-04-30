@@ -1,0 +1,327 @@
+# Telemetry - Metrics, Traces, and Logs Collection
+# This configuration enables observability for Istio service mesh.
+
+# =========================================
+# Global Telemetry Configuration
+# Applies to all services in the namespace
+# =========================================
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: eazybank-telemetry
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: telemetry-global
+spec:
+  # Metrics configuration
+  metrics:
+  - providers:
+    - name: prometheus
+    # Override metrics (optional)
+    # overrides:
+    # - match:
+    #     metric: requests_total
+    #   tags:
+    #     destination_service_name: accounts
+    #   value:
+    #     operation: REPLACE
+    #     value: "1"
+  
+  # Tracing configuration
+  tracing:
+  - providers:
+    - name: tempo-otel  # Or use: jaeger, zipkin
+    # Sampling rate (1.0 = 100%)
+    randomSamplingPercentage: 100.0
+  
+    # Custom tags for tracing
+    customTags:
+      correlation_id:
+        header:
+          name: eazybank-correlation-id
+      user_id:
+        header:
+          name: x-user-id
+      source_ip:
+        environment:
+          name: NODE_IP
+      request_id:
+        header:
+          name: x-request-id
+  
+  # Access logging configuration
+  accessLogging:
+  - providers:
+    - name: otel  # OpenTelemetry format
+      format: json
+
+---
+# =========================================
+# Service-Specific Telemetry: Accounts
+# =========================================
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: accounts-telemetry
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: telemetry-accounts
+spec:
+  selector:
+    matchLabels:
+      app: accounts
+  tracing:
+  - providers:
+    - name: tempo-otel
+    randomSamplingPercentage: 100.0
+    customTags:
+      service_name:
+        literal:
+          value: accounts-service
+
+---
+# =========================================
+# Service-Specific Telemetry: Cards
+# =========================================
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: cards-telemetry
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: telemetry-cards
+spec:
+  selector:
+    matchLabels:
+      app: cards
+  tracing:
+  - providers:
+    - name: tempo-otel
+    customTags:
+      service_name:
+        literal:
+          value: cards-service
+
+---
+# =========================================
+# Service-Specific Telemetry: Loans
+# =========================================
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: loans-telemetry
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: telemetry-loans
+spec:
+  selector:
+    matchLabels:
+      app: loans
+  tracing:
+  - providers:
+    - name: tempo-otel
+    customTags:
+      service_name:
+        literal:
+          value: loans-service
+
+---
+# =========================================
+# Service-Specific Telemetry: GatewayServer
+# =========================================
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: gatewayserver-telemetry
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: telemetry-gatewayserver
+spec:
+  selector:
+    matchLabels:
+      app: gatewayserver
+  tracing:
+  - providers:
+    - name: tempo-otel
+    randomSamplingPercentage: 100.0
+    customTags:
+      service_name:
+        literal:
+          value: gatewayserver
+  accessLogging:
+  - providers:
+    - name: otel
+      format: json
+
+---
+# =========================================
+# Prometheus Metrics Configuration for Istio
+# =========================================
+# This ConfigMap configures Prometheus to scrape Istio proxy metrics
+# Apply to the namespace where Prometheus is running
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-istio-config
+  namespace: prometheus  # Change to your Prometheus namespace
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: prometheus-istio-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+    
+    scrape_configs:
+    # Existing service metrics (from application)
+    - job_name: 'accounts'
+      metrics_path: '/actuator/prometheus'
+      static_configs:
+        - targets: ['accounts:8080']
+    
+    - job_name: 'cards'
+      metrics_path: '/actuator/prometheus'
+      static_configs:
+        - targets: ['cards:9000']
+    
+    - job_name: 'loans'
+      metrics_path: '/actuator/prometheus'
+      static_configs:
+        - targets: ['loans:8090']
+    
+    - job_name: 'message'
+      metrics_path: '/actuator/prometheus'
+      static_configs:
+        - targets: ['message:9010']
+    
+    # Istio proxy metrics (sidecar)
+    - job_name: 'istio-proxy'
+      metrics_path: '/stats/prometheus'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        action: keep
+        regex: 'istio-proxy'
+      - source_labels: [__meta_kubernetes_namespace]
+        action: keep
+        regex: 'microservices'
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app
+    
+    # Istio control plane metrics (istiod)
+    - job_name: 'istiod'
+      metrics_path: '/metrics'
+      static_configs:
+        - targets: ['istiod.istio-system:15014']
+    
+    # Istio ingress gateway metrics
+    - job_name: 'istio-ingress'
+      metrics_path: '/stats/prometheus'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_istio]
+        action: keep
+        regex: 'ingressgateway'
+      - source_labels: [__meta_kubernetes_namespace]
+        action: keep
+        regex: 'istio-system'
+    
+    # Envoy proxy metrics (alternative)
+    - job_name: 'envoy-stats'
+      metrics_path: '/stats/prometheus'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        action: keep
+        regex: 'istio-proxy'
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: 'true'
+
+---
+# =========================================
+# OpenTelemetry Collector Configuration
+# =========================================
+# Use this if you want to use OTEL Collector instead of direct Tempo integration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/part-of: istio
+    app.kubernetes.io/name: otel-collector-config
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    exporters:
+      otlp:
+        endpoint: tempo:4318
+        tls:
+          insecure: true
+      # Alternative: Jaeger exporter
+      # jaeger:
+      #   endpoint: jaeger-collector:14250
+    
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [otlp]
+        metrics:
+          receivers: [otlp]
+          exporters: [otlp]
+        logs:
+          receivers: [otlp]
+          exporters: [otlp]
+
+---
+# =========================================
+# Instructions for Observability Integration
+# =========================================
+# To enable observability:
+#
+# 1. Apply the Telemetry configurations:
+#    kubectl apply -f observability/telemetry.yaml
+#
+# 2. Update Prometheus to scrape Istio metrics:
+#    kubectl apply -f observability/telemetry.yaml
+#    # Or manually update your Prometheus ConfigMap
+#
+# 3. Verify metrics are being scraped:
+#    kubectl port-forward -n prometheus svc/prometheus 9090:9090
+#    # Visit http://localhost:9090/targets
+#    # You should see 'istio-proxy' and 'istiod' targets
+#
+# 4. Verify traces in Tempo:
+#    kubectl port-forward -n tempo svc/tempo 3100:3100
+#    # Visit Grafana and check Tempo datasource
+#    # Run a test request and verify trace appears
+#
+# 5. Import Istio dashboards to Grafana:
+#    # See: .docker/istio/observability/grafana-dashboards/
+#    kubectl apply -f observability/grafana-dashboards/
+#
+# 6. View Istio proxy logs:
+#    kubectl logs <pod-name> -c istio-proxy -n microservices
+#
+# 7. Monitor access logs (if enabled):
+#    kubectl logs <pod-name> -c istio-proxy -n microservices | grep "api/fetch"

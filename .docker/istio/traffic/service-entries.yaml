@@ -1,0 +1,184 @@
+# ServiceEntry - External Services Configuration
+# These configurations register external services with the Istio service mesh.
+
+# ==========================================
+# Keycloak External Service Entry
+# Allows services in the mesh to access external Keycloak instance
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: keycloak-external
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: service-entry-keycloak
+spec:
+  hosts:
+  - keycloak.eazybank.com  # Change to your Keycloak hostname
+  - keycloak  # Internal service name (if running in cluster)
+  ports:
+  - number: 80
+    name: http
+    protocol: HTTP
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 8080
+    name: http-alt
+    protocol: HTTP
+  location: MESH_EXTERNAL  # External to the mesh
+  resolution: DNS  # Use DNS resolution
+
+---
+# ==========================================
+# Keycloak Internal ServiceEntry (if running in cluster)
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: keycloak-internal
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: service-entry-keycloak-internal
+spec:
+  hosts:
+  - keycloak.default.svc.cluster.local
+  - keycloak
+  ports:
+  - number: 8080
+    name: http
+    protocol: HTTP
+  location: MESH_INTERNAL
+  resolution: STATIC
+  endpoints:
+  - address: keycloak.default.svc.cluster.local
+    ports:
+      http: 8080
+
+---
+# ==========================================
+# Git Repository (for ConfigServer)
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: git-repo-external
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: service-entry-git
+spec:
+  hosts:
+  - github.com  # Or your Git server hostname
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 80
+    name: http
+    protocol: HTTP
+  location: MESH_EXTERNAL
+  resolution: DNS
+
+---
+# ==========================================
+# External Database Example (if using cloud databases)
+# ==========================================
+# apiVersion: networking.istio.io/v1beta1
+# kind: ServiceEntry
+# metadata:
+#   name: external-mysql
+#   namespace: microservices
+# spec:
+#   hosts:
+#   - mydb-instance.abc123.us-east-1.rds.amazonaws.com  # AWS RDS example
+#   ports:
+#   - number: 3306
+#     name: mysql
+#     protocol: MYSQL
+#   location: MESH_EXTERNAL
+#   resolution: DNS
+
+---
+# ==========================================
+# Egress Gateway for Controlled External Access
+# Use this if you want to route external traffic through an egress gateway
+# ==========================================
+# apiVersion: networking.istio.io/v1beta1
+# kind: Gateway
+# metadata:
+#   name: egress-gateway
+#   namespace: istio-system
+# spec:
+#   selector:
+#     istio: egressgateway
+#   servers:
+#   - port:
+#       number: 443
+#       name: https
+#       protocol: HTTPS
+#     hosts:
+#     - "*.keycloak.com"
+#     tls:
+#       mode: ISTIO_MUTUAL
+
+---
+# ==========================================
+# ServiceEntry for Eureka Server (if needed)
+# Eureka uses peer-to-peer replication
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: eurekaserver-external
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: service-entry-eurekaserver
+spec:
+  hosts:
+  - eurekaserver.microservices.svc.cluster.local
+  ports:
+  - number: 8070
+    name: http
+    protocol: HTTP
+  location: MESH_INTERNAL
+  resolution: STATIC
+  endpoints:
+  - address: 127.0.0.1  # Eureka pod IP (will be resolved by K8s DNS)
+    ports:
+      http: 8070
+
+---
+# ==========================================
+# Instructions for ServiceEntry
+# ==========================================
+# To apply ServiceEntry resources:
+#
+# 1. Apply all ServiceEntries:
+#    kubectl apply -f traffic/service-entries.yaml
+#
+# 2. Verify ServiceEntries:
+#    kubectl get serviceentry -n microservices
+#    kubectl describe serviceentry keycloak-external -n microservices
+#
+# 3. Test external access:
+#    # Exec into a pod
+#    kubectl exec -it <pod-name> -n microservices -- /bin/sh
+#
+#    # Test Keycloak connectivity
+#    curl -v http://keycloak:8080/realms/master
+#
+# 4. Monitor external traffic:
+#    # Check proxy config
+#    istioctl proxy-config cluster <pod-name> -n microservices | grep keycloak
+#
+#    # View access logs
+#    kubectl logs <pod-name> -c istio-proxy -n microservices | grep keycloak
+#
+# 5. If using Egress Gateway:
+#    # Create ServiceEntry for egress
+#    # Create VirtualService to route through egress gateway
+#    # See: https://istio.io/latest/docs/tasks/traffic-management/egress/egress-gateway/

@@ -1,0 +1,300 @@
+# AuthorizationPolicy - Service-to-Service Access Control
+# These policies implement the principle of least privilege
+# Only authorized services can access specific endpoints
+
+# ============================================
+# Global Deny-All Policy (Optional - Strict Security)
+# Uncomment to deny all traffic by default, then add allow rules
+# ============================================
+# apiVersion: security.istio.io/v1beta1
+# kind: AuthorizationPolicy
+# metadata:
+#   name: deny-all
+#   namespace: microservices
+# spec: {}  # Empty spec = deny all
+
+# ============================================
+# Accounts Service Authorization Policy
+# Only allow specific services to access accounts
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: accounts-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-accounts
+spec:
+  # Apply to accounts service pods
+  selector:
+    matchLabels:
+      app: accounts
+  rules:
+  # Rule 1: Allow gatewayserver to access accounts (external traffic)
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/gatewayserver-sa"]
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*", "/actuator/health/*"]
+  
+  # Rule 2: Allow accounts to access cards and loans (inter-service calls)
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/accounts-sa"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/api/fetch"]
+  
+  # Rule 3: Allow health checks from istio-system (prometheus, etc.)
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/actuator/health/*"]
+
+---
+# ============================================
+# Cards Service Authorization Policy
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: cards-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-cards
+spec:
+  selector:
+    matchLabels:
+      app: cards
+  rules:
+  # Allow accounts service to fetch card details
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/accounts-sa"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/api/fetch"]
+  
+  # Allow gatewayserver to access cards
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/gatewayserver-sa"]
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*", "/actuator/health/*"]
+  
+  # Allow health checks
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/actuator/health/*"]
+
+---
+# ============================================
+# Loans Service Authorization Policy
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: loans-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-loans
+spec:
+  selector:
+    matchLabels:
+      app: loans
+  rules:
+  # Allow accounts service to fetch loan details
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/accounts-sa"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/api/fetch"]
+  
+  # Allow gatewayserver to access loans
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/gatewayserver-sa"]
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*", "/actuator/health/*"]
+  
+  # Allow health checks
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/actuator/health/*"]
+
+---
+# ============================================
+# Message Service Authorization Policy
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: message-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-message
+spec:
+  selector:
+    matchLabels:
+      app: message
+  rules:
+  # Allow accounts service to send messages (events)
+  - from:
+    - source:
+        principals: ["cluster.local/ns/microservices/sa/accounts-sa"]
+    to:
+    - operation:
+        methods: ["POST"]
+        paths: ["/api/*"]
+  
+  # Allow health checks
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/actuator/health/*"]
+
+---
+# ============================================
+# GatewayServer Authorization Policy
+# Allow external traffic with valid JWT (if using Istio JWT validation)
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: gatewayserver-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-gatewayserver
+spec:
+  selector:
+    matchLabels:
+      app: gatewayserver
+  rules:
+  # Allow all traffic to gatewayserver (JWT validation handled by Spring Cloud Gateway)
+  # If using Istio JWT validation, uncomment below:
+  # - from:
+  #   - source:
+  #       requestPrincipals: ["*"]  # Require valid JWT
+  - to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/goutos/bank/*", "/actuator/health/*"]
+
+---
+# ============================================
+# ConfigServer Authorization Policy
+# Restrict access to configserver
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: configserver-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-configserver
+spec:
+  selector:
+    matchLabels:
+      app: configserver
+  rules:
+  # Allow services to access configserver
+  - from:
+    - source:
+        principals:
+        - "cluster.local/ns/microservices/sa/accounts-sa"
+        - "cluster.local/ns/microservices/sa/cards-sa"
+        - "cluster.local/ns/microservices/sa/loans-sa"
+        - "cluster.local/ns/microservices/sa/message-sa"
+        - "cluster.local/ns/microservices/sa/gatewayserver-sa"
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/*"]
+  
+  # Allow health checks
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/actuator/health/*"]
+
+---
+# ============================================
+# Eureka Server Authorization Policy
+# Allow services to register with Eureka
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: eurekaserver-service-policy
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-eurekaserver
+spec:
+  selector:
+    matchLabels:
+      app: eurekaserver
+  rules:
+  # Allow all microservices to register with Eureka
+  - from:
+    - source:
+        namespaces: ["microservices"]
+    to:
+    - operation:
+        methods: ["POST", "GET", "PUT", "DELETE"]
+        paths: ["/eureka/*", "/actuator/health/*"]
+
+---
+# ============================================
+# Internal-Only Policy
+# Restrict services to only accept internal traffic
+# ============================================
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: internal-only
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: authorization-policy-internal-only
+spec:
+  rules:
+  # Only allow requests from the microservices namespace
+  - from:
+    - source:
+        namespaces: ["microservices"]
+    - source:
+        namespaces: ["istio-system"]  # Allow health checks

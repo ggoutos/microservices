@@ -1,0 +1,322 @@
+# VirtualServices - Routing Rules, Retries, Timeouts
+# These configurations define how traffic is routed to services
+
+# ==========================================
+# Accounts Service VirtualService
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: accounts
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: virtual-service-accounts
+spec:
+  hosts:
+  - accounts
+  http:
+  # Canary deployment example (10% to v2, 90% to v1)
+  - match:
+    - headers:
+        x-user-type:
+          exact: test
+    route:
+    - destination:
+        host: accounts
+        subset: v2
+      weight: 100
+  - route:
+    - destination:
+        host: accounts
+        subset: v1
+      weight: 90
+    - destination:
+        host: accounts
+        subset: v2
+      weight: 10
+    # Retry policy
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: 5xx,reset,connect-failure,refused-stream
+    # Timeout
+    timeout: 5s
+    # CORS policy
+    corsPolicy:
+      allowOrigins:
+      - exact: "http://localhost:3000"
+      - exact: "http://eazybank.com"
+      allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      allowHeaders:
+      - "eazybank-correlation-id"
+      - "Authorization"
+      - "x-user-id"
+
+---
+# ==========================================
+# Cards Service VirtualService
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: cards
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: virtual-service-cards
+spec:
+  hosts:
+  - cards
+  http:
+  - route:
+    - destination:
+        host: cards
+        subset: v1
+      weight: 100
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: 5xx,reset
+    timeout: 5s
+
+---
+# ==========================================
+# Loans Service VirtualService
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: loans
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: virtual-service-loans
+spec:
+  hosts:
+  - loans
+  http:
+  - route:
+    - destination:
+        host: loans
+        subset: v1
+      weight: 100
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: 5xx,reset
+    timeout: 5s
+
+---
+# ==========================================
+# Message Service VirtualService
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: message
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: virtual-service-message
+spec:
+  hosts:
+  - message
+  http:
+  - route:
+    - destination:
+        host: message
+        subset: v1
+      weight: 100
+    timeout: 10s  # Longer timeout for message processing
+
+---
+# ==========================================
+# GatewayServer VirtualService
+# Routes external traffic from Istio Ingress Gateway
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gatewayserver
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: virtual-service-gatewayserver
+spec:
+  hosts:
+  - "eazybank.com"
+  - "localhost"
+  gateways:
+  - eazybank-gateway
+  http:
+  # Route to accounts service
+  - match:
+    - uri:
+        prefix: /goutos/bank/accounts
+    route:
+    - destination:
+        host: accounts
+        port:
+          number: 8080
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+    timeout: 5s
+  
+  # Route to cards service
+  - match:
+    - uri:
+        prefix: /goutos/bank/cards
+    route:
+    - destination:
+        host: cards
+        port:
+          number: 9000
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+    timeout: 5s
+  
+  # Route to loans service
+  - match:
+    - uri:
+        prefix: /goutos/bank/loans
+    route:
+    - destination:
+        host: loans
+        port:
+          number: 8090
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+    timeout: 5s
+  
+  # Route to message service (if exposed externally)
+  - match:
+    - uri:
+        prefix: /goutos/bank/message
+    route:
+    - destination:
+        host: message
+        port:
+          number: 9010
+    timeout: 10s
+
+---
+# ==========================================
+# ConfigServer VirtualService
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: configserver
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: virtual-service-configserver
+spec:
+  hosts:
+  - configserver
+  http:
+  - route:
+    - destination:
+        host: configserver
+        subset: v1
+      weight: 100
+    timeout: 5s
+
+---
+# ==========================================
+# Istio Ingress Gateway Configuration
+# ==========================================
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: eazybank-gateway
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: istio-ingress-gateway
+spec:
+  selector:
+    istio: ingressgateway  # Use Istio's ingress gateway
+  servers:
+  # HTTP server (redirect to HTTPS)
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*.eazybank.com"
+    - "localhost"
+    tls:
+      httpsRedirect: true  # Redirect HTTP to HTTPS
+  
+  # HTTPS server
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "*.eazybank.com"
+    - "localhost"
+    tls:
+      mode: SIMPLE
+      credentialName: eazybank-tls-cert  # Kubernetes Secret with TLS cert
+
+---
+# ==========================================
+# Instructions for Traffic Management
+# ==========================================
+# To apply the VirtualServices:
+#
+# 1. Apply all VirtualServices:
+#    kubectl apply -f traffic/virtual-services.yaml
+#
+# 2. Verify VirtualServices:
+#    kubectl get virtualservices -n microservices
+#    kubectl describe virtualservice accounts -n microservices
+#
+# 3. Test routing:
+#    # Port-forward to istio ingress gateway
+#    kubectl port-forward -n istio-system svc/istio-ingress 8080:80
+#
+#    # Test routing to accounts
+#    curl http://localhost:8080/goutos/bank/accounts/api/fetch?mobileNumber=1234567890
+#
+# 4. Monitor traffic:
+#    # Check proxy config
+#    istioctl proxy-config route <pod-name> -n microservices
+#
+#    # View access logs
+#    kubectl logs <pod-name> -c istio-proxy -n microservices | grep "api/fetch"
+#
+# 5. Test retries:
+#    # Introduce faults (for testing)
+#    kubectl apply -f - <<EOF
+#    apiVersion: networking.istio.io/v1beta1
+#    kind: VirtualService
+#    metadata:
+#      name: accounts-test-fault
+#      namespace: microservices
+#    spec:
+#      hosts:
+#      - accounts
+#      http:
+#      - fault:
+#          abort:
+#            percentage:
+#              value: 50
+#            httpStatus: 500
+#        route:
+#        - destination:
+#            host: accounts
+#    EOF
+#
+#    # Then test if retries work
+#    for i in {1..10}; do curl -s -o /dev/null -w "%{http_code}\n" http://accounts:8080/api/fetch?mobileNumber=123; done

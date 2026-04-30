@@ -1,0 +1,283 @@
+# Istio Values Configuration for EazyBank Platform
+# This file is used for installing Istio components via Helm
+# Usage: helm install istiod istio/istiod --namespace istio-system --values istio-values.yaml
+
+# ============================================
+# Global Configuration
+# ============================================
+global:
+  # Istio control plane revision
+  revision: default
+  
+  # Trust domain for SPIFFE identities
+  trustDomain: cluster.local
+  
+  # Network configuration (for multi-cluster setup)
+  network: ""
+  
+  # MTls configuration
+  mtls:
+    # Default mTLS mode for the mesh
+    enabled: true
+    # Auto-mTLS: automatically configure mTLS for services
+    autoMtls: true
+  
+  # Istio gateway configuration
+  gateway:
+    # Secret configuration for TLS certificates
+    secretName: ""
+    # Namespace for gateway secrets
+    secretNamespace: istio-system
+
+# ============================================
+# Istiod (Control Plane) Configuration
+# ============================================
+# These values apply to the istiod chart
+hub: gcr.io/istio-release
+tag: 1.21.0  # Istio version - requires Kubernetes 1.28+
+
+# Resource configuration for Istiod
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+
+# Replica count for HA
+replicaCount: 1  # Increase to 2+ for production HA
+
+# Enable Kubernetes Gateway API (set to true for Gateway API instead of Istio API)
+enableGatewayAPI: false
+
+# Pilot configuration (service discovery and configuration)
+pilot:
+  # Number of replicas
+  replicaCount: 1
+  
+  # Resource limits
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+  
+  # Enable debug logging
+  debug: false
+  
+  # Trace sampling rate (1.0 = 100%)
+  traceSampling: 1.0
+  
+  # Enable gRPC access logs
+  grpcAccessLog: false
+
+# ============================================
+# Ingress Gateway Configuration
+# ============================================
+gateways:
+  istio-ingressgateway:
+    # Enable the ingress gateway
+    enabled: true
+    
+    # Labels for the gateway pods
+    labels:
+      istio: ingressgateway
+      app: istio-ingressgateway
+      app.kubernetes.io/name: istio-ingressgateway
+      app.kubernetes.io/part-of: istio
+    
+    # Replica count
+    replicaCount: 1  # Increase to 2+ for production HA
+    
+    # Service configuration
+    service:
+      # Service type (LoadBalancer for external access)
+      type: LoadBalancer
+      # Ports exposed by the gateway
+      ports:
+        - name: status-port
+          port: 15021
+          targetPort: 15021
+          description: Status port
+        - name: http2
+          port: 80
+          targetPort: 8080
+          description: HTTP
+        - name: https
+          port: 443
+          targetPort: 8443
+          description: HTTPS
+        - name: tcp
+          port: 31400
+          targetPort: 31400
+          description: TCP
+      # Load balancer configuration
+      loadBalancerIP: ""
+      loadBalancerSourceRanges: []
+    
+    # Resource configuration
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    
+    # Pod annotations
+    podAnnotations: {}
+    
+    # Node selector for pod placement
+    nodeSelector: {}
+    
+    # Tolerations for node taints
+    tolerations: []
+    
+    # Environment variables
+    env:
+      - name: GATEWAY_NAME
+        value: istio-ingressgateway
+      - name: ISTIO_META_ROUTER_MODE
+        value: standard
+
+# ============================================
+# Egress Gateway Configuration (Optional)
+# ============================================
+  istio-egressgateway:
+    # Enable egress gateway (optional - for controlled external access)
+    enabled: false
+    
+    labels:
+      istio: egressgateway
+      app: istio-egressgateway
+    
+    replicaCount: 1
+    
+    service:
+      type: ClusterIP
+      ports:
+        - name: http2
+          port: 80
+          targetPort: 8080
+        - name: https
+          port: 443
+          targetPort: 8443
+
+# ============================================
+# Sidecar Configuration
+# ============================================
+sidecarInjectorWebhook:
+  # Enable automatic sidecar injection
+  enabled: true
+  
+  # Namespaces to watch for injection
+  watchNamespace: ""  # Empty = all namespaces
+  
+  # Resource limits for the injector
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ============================================
+# Telemetry Configuration
+# ============================================
+telemetry:
+  # Enable telemetry
+  enabled: true
+  
+  # Tracing configuration
+  tracing:
+    # Enable tracing
+    enabled: true
+    # Tracing provider (tempo, jaeger, zipkin)
+    provider: tempo
+    # Sampling rate (1.0 = 100%)
+    samplingRate: 1.0
+    # Tempo/Jaeger endpoint
+    endpoint: http://tempo:4318
+  
+  # Metrics configuration
+  metrics:
+    # Enable metrics
+    enabled: true
+    # Metrics provider (prometheus)
+    provider: prometheus
+    # Enable envoy metrics
+    enableEnvoyMetrics: true
+  
+  # Access logging
+  accessLogging:
+    # Enable access logging
+    enabled: true
+    # Log format (json or text)
+    format: json
+
+# ============================================
+# Security Configuration
+# ============================================
+security:
+  # Certificate authority configuration
+  ca:
+    # CA provider (istiod or custom)
+    provider: istiod
+    # Secret name for custom CA
+    secretName: ""
+  
+  # Enable auto-mTLS
+  autoMtls: true
+
+# ============================================
+# Mesh Configuration
+# ============================================
+meshConfig:
+  # Enable Prometheus metrics
+  enablePrometheusMerge: true
+  
+  # Access log configuration
+  accessLogFile: /dev/stdout
+  accessLogEncoding: JSON
+  accessLogFormat: |
+    [%-START_TIME%] "%-REQ(:METHOD)% %-REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %-PROTOCOL%"
+    %-RESPONSE-CODE% %-RESPONSE-FLAGS% %-BYTES-RECEIVED% %-BYTES-SENT%
+    %-DURATION% %-RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%-REQ(:AUTHORITY)%"
+    "%-REQ(USER-AGENT)%" "%-REQ(X-REQUEST-ID)%" "%-REQ(:REFERRER)%" "%-REQ(X-FORWARDED-FOR)%"
+  
+  # Tracing configuration
+  enableTracing: true
+  defaultConfig:
+    tracing:
+      sampling: 100.0
+      custom_tags:
+        correlation_id:
+          header:
+            name: eazybank-correlation-id
+      zipkin:
+        address: tempo:9411
+        enable_128bit_trace_id: true
+        initial_buffer_size: 512
+        max_buffer_size: 4096
+  
+  # Outlier detection (circuit breaking)
+  outlierDetection:
+    consecutive5xxErrors: 5
+    interval: 30s
+    baseEjectionTime: 30s
+    maxEjectionPercent: 50
+  
+  # Connection pool settings
+  connectionPool:
+    tcp:
+      maxConnections: 50
+      connectTimeout: 5s
+    http:
+      http1MaxPendingRequests: 10
+      maxRequestsPerConnection: 2
+      maxRetries: 3
+      perTryTimeout: 2s

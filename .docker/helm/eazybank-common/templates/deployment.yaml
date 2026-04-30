@@ -5,6 +5,7 @@ metadata:
   name: {{ .Values.deploymentName }}
   labels:
     app: {{ .Values.appLabel }}
+    version: {{ .Values.image.tag | default "latest" }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -14,10 +15,42 @@ spec:
     metadata:
       labels:
         app: {{ .Values.appLabel }}
+        version: {{ .Values.image.tag | default "latest" }}
+      {{- if .Values.istio_enabled }}
+      annotations:
+        # Enable Istio sidecar injection for this pod
+        sidecar.istio.io/inject: "true"
+        # Resource limits for Istio sidecar (optional)
+        {{- if .Values.istio.sidecar.resources }}
+        sidecar.istio.io/proxyCPU: "{{ .Values.istio.sidecar.resources.cpu }}"
+        sidecar.istio.io/proxyMemory: "{{ .Values.istio.sidecar.resources.memory }}"
+        {{- end }}
+        # Exclude ports from Istio (if needed)
+        {{- if .Values.istio.excludeInboundPorts }}
+        traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.istio.excludeInboundPorts }}"
+        {{- end }}
+        {{- if .Values.istio.excludeOutboundPorts }}
+        traffic.sidecar.istio.io/excludeOutboundPorts: "{{ .Values.istio.excludeOutboundPorts }}"
+        {{- end }}
+      {{- end }}
     spec:
+      {{- if .Values.istio_enabled }}
+      # Use ServiceAccount for Istio authorization policies
+      serviceAccountName: {{ .Values.appLabel }}-sa
+      automountServiceAccountToken: true
+      # Topology spread constraints for HA with Istio
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: {{ .Values.appLabel }}
+      {{- end }}
       containers:
       - name: {{ .Values.appLabel }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: {{ .Values.containerPort }}
           protocol: TCP
@@ -47,7 +80,7 @@ spec:
               name: {{ .Values.global.configMapName }}
               key: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
         {{- end }}
-        {{- if .Values.resouceserver_enabled }}
+        {{- if .Values.resourceserver_enabled }}
         - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK-SET-URI
           valueFrom: 
             configMapKeyRef:
@@ -79,11 +112,40 @@ spec:
           value: {{ .Values.appName }}
         {{- end }}
         {{- if .Values.kafka_enabled }}
-        - name: SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS
+        - name: SPRING_CLOUD_STREAM_KAFKA_BINDERS
           valueFrom: 
             configMapKeyRef:
               name: {{ .Values.global.configMapName }}
-              key: SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS
+              key: SPRING_CLOUD_STREAM_KAFKA_BINDERS
         {{- end }}
-        
+        {{- if .Values.istio_enabled }}
+        # Istio-related environment variables (optional)
+        {{- if .Values.istio.env }}
+        {{- range $key, $value := .Values.istio.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: {{ .Values.containerPort }}
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: {{ .Values.containerPort }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        # Resource limits
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
 {{- end -}}

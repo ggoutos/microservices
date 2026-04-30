@@ -1,0 +1,335 @@
+# DestinationRules - Traffic Policies, Circuit Breaking, Outlier Detection
+# These configurations define connection pool settings, circuit breaking, and mTLS policies
+
+# ===========================================
+# Accounts Service DestinationRule
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: accounts
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-accounts
+spec:
+  host: accounts
+  trafficPolicy:
+    # Connection pool settings
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 5s
+        keepAlive: {}
+      http:
+        http1MaxPendingRequests: 10
+        maxRequestsPerConnection: 2
+        maxRetries: 3
+        perTryTimeout: 2s
+    
+    # Circuit breaker (outlier detection)
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 30
+  
+  # Subsets for canary deployments
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2
+    labels:
+      version: v2
+
+---
+# ===========================================
+# Cards Service DestinationRule
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: cards
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-cards
+spec:
+  host: cards
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 5s
+      http:
+        http1MaxPendingRequests: 10
+        maxRequestsPerConnection: 2
+        maxRetries: 3
+        perTryTimeout: 2s
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+
+---
+# ===========================================
+# Loans Service DestinationRule
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: loans
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-loans
+spec:
+  host: loans
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 5s
+      http:
+        http1MaxPendingRequests: 10
+        maxRequestsPerConnection: 2
+        maxRetries: 3
+        perTryTimeout: 2s
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+
+---
+# ===========================================
+# Message Service DestinationRule
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: message
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-message
+spec:
+  host: message
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 5s
+      http:
+        http1MaxPendingRequests: 10
+        maxRequestsPerConnection: 2
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+
+---
+# ===========================================
+# GatewayServer DestinationRule
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: gatewayserver
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-gatewayserver
+spec:
+  host: gatewayserver
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+      http:
+        http1MaxPendingRequests: 20
+        maxRequestsPerConnection: 5
+        maxRetries: 3
+        perTryTimeout: 3s
+    outlierDetection:
+      consecutive5xxErrors: 10
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+
+---
+# ===========================================
+# ConfigServer DestinationRule
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: configserver
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-configserver
+spec:
+  host: configserver
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 5s
+      http:
+        http1MaxPendingRequests: 5
+        maxRequestsPerConnection: 2
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+
+---
+# ===========================================
+# Database DestinationRules (Disable mTLS)
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: accountsdb
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-accountsdb
+spec:
+  host: accountsdb
+  trafficPolicy:
+    tls:
+      mode: DISABLE  # No mTLS for database connections
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 5s
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: cardsdb
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-cardsdb
+spec:
+  host: cardsdb
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 5s
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: loansdb
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-loansdb
+spec:
+  host: loansdb
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 5s
+
+---
+# ===========================================
+# Redis DestinationRule (Disable mTLS)
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: redis
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-redis
+spec:
+  host: redis
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 5s
+
+---
+# ===========================================
+# RabbitMQ DestinationRule (Disable mTLS)
+# ===========================================
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: rabbitmq
+  namespace: microservices
+  labels:
+    app.kubernetes.io/part-of: eazybank
+    app.kubernetes.io/name: destination-rule-rabbitmq
+spec:
+  host: rabbit
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 5s
+
+---
+# ===========================================
+# Instructions for Circuit Breaking Testing
+# ===========================================
+# To test circuit breaking:
+#
+# 1. Apply the DestinationRules:
+#    kubectl apply -f traffic/destination-rules.yaml
+#
+# 2. Check the configuration:
+#    kubectl get destinationrules -n microservices
+#
+# 3. Test with load:
+#    # Generate load to trigger circuit breaker
+#    for i in {1..100}; do curl -s -o /dev/null http://accounts:8080/api/fetch?mobileNumber=123; done
+#
+# 4. Check outlier detection:
+#    istioctl proxy-config cluster <pod-name> -n microservices
+#
+# 5. Monitor circuit breaker metrics:
+#    # Port-forward to Prometheus
+#    kubectl port-forward -n prometheus svc/prometheus 9090:9090
+#    # Visit http://localhost:9090 and query:
+#    - envoy_cluster_outlier_detection_ejections_active
+#    - envoy_cluster_circuit_breakers_default_cx_pool_open_or_else_monitored
