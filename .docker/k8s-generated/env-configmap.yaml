@@ -1,0 +1,22 @@
+apiVersion: v1
+data:
+  COMPOSE_PROJECT_NAME: microservices
+  CONFIG_SERVER_HOST: configserver
+  EUREKA_SERVER_HOST: eurekaserver
+  IMAGE_TAG: jib
+  JAVA_TOOL_OPTIONS: -javaagent:/app/libs/opentelemetry-javaagent-2.26.1.jar
+  KAFKA_HOST: kafka
+  KEYCLOAK_HOST: keycloak
+  KEYCLOAK_PORT: "7080"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+  OTEL_LOGS_EXPORTER: none
+  OTEL_METRICS_EXPORTER: none
+  RABBITMQ_HOST: rabbit
+  REDIS_HOST: redis
+  SPRING_CLOUD_STREAM_DEAFULT_BINDER: rabbit
+  SPRING_PROFILES_ACTIVE: default
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: accounts-env
+  name: env

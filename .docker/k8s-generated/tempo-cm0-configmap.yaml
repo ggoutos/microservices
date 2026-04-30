@@ -1,0 +1,55 @@
+apiVersion: v1
+data:
+  tempo.yml: |+
+    server:
+      http_listen_port: 3100
+      http_listen_address: 0.0.0.0
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /tmp/tempo/blocks
+        pool:
+          max_workers: 100
+          queue_depth: 10000
+
+    # Optional: Configure metrics endpoint
+    metrics_generator:
+      registry:
+        external_labels:
+          source: tempo
+          cluster: docker-compose
+
+    # Optional: Configure query frontend
+    query_frontend:
+      search:
+        duration_slo: 5s
+        throughput_bytes_slo: 1.073741824e+09
+      trace_by_id:
+        duration_slo: 5s
+
+    # Optional: Configure compactor (if using multi-tenant setup)
+    # compactor:
+    #   compaction:
+    #     compaction_window: 1h
+    #     max_compaction_objects: 1000000
+    #     block_retention: 1h
+    #     compacted_block_retention: 10m
+
+kind: ConfigMap
+metadata:
+  annotations:
+    use-subpath: "true"
+  labels:
+    io.kompose.service: tempo
+  name: tempo-cm0

@@ -10,6 +10,8 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: "admin"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "admin"
     command: "start-dev"
+    labels:
+      kompose.service.type: LoadBalancer
     extends:
       file: common-config.yml
       service: network-deploy-service
@@ -20,6 +22,7 @@ services:
     command: "-config.file=/etc/loki/config.yaml -target=read -query-scheduler.use-scheduler-ring=false"
     ports:
       - "3101:3100"
+      - "3100"
       - "7946"
       - "9095"
     volumes:
@@ -48,6 +51,7 @@ services:
     command: "-config.file=/etc/loki/config.yaml -target=write"
     ports:
       - "3102:3100"
+      - "3100"
       - "7946"
       - "9095"
     volumes:
@@ -79,6 +83,9 @@ services:
       - "12345:12345"
     depends_on:
       - gateway
+    labels:
+      kompose.volume.type: configMap
+      kompose.serviceaccount-name: alloy
     extends:
       file: common-config.yml
       service: network-deploy-service
@@ -118,6 +125,8 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    labels:
+      kompose.service.type: LoadBalancer
     extends:
       file: common-config.yml
       service: network-deploy-service
@@ -128,6 +137,7 @@ services:
     command: -config.file /etc/tempo-config.yml
     ports:
       - "3110:3100"
+      - "3100"
       - "4318:4318"
     volumes:
       - ./tempo/tempo.yml:/etc/tempo-config.yml
@@ -154,6 +164,8 @@ services:
         /run.sh
     ports:
       - "3000:3000"
+    labels:
+      kompose.service.type: LoadBalancer
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1" ]
       interval: 10s
@@ -195,58 +207,15 @@ services:
       - sh
       - -euc
       - |
-        cat <<EOF > /etc/nginx/nginx.conf
-        user  nginx;
-        worker_processes  5;  ## Default: 1
-
-        events {
-          worker_connections   1000;
-        }
-
-        http {
-          resolver 127.0.0.11;
-
-          server {
-            listen             3100;
-
-            location = / {
-              return 200 'OK';
-              auth_basic off;
-            }
-
-            location = /api/prom/push {
-              proxy_pass       http://write:3100\$$request_uri;
-            }
-
-            location = /api/prom/tail {
-              proxy_pass       http://read:3100\$$request_uri;
-              proxy_set_header Upgrade \$$http_upgrade;
-              proxy_set_header Connection "upgrade";
-            }
-
-            location ~ /api/prom/.* {
-              proxy_pass       http://read:3100\$$request_uri;
-            }
-
-            location = /loki/api/v1/push {
-              proxy_pass       http://write:3100\$$request_uri;
-            }
-
-            location = /loki/api/v1/tail {
-              proxy_pass       http://read:3100\$$request_uri;
-              proxy_set_header Upgrade \$$http_upgrade;
-              proxy_set_header Connection "upgrade";
-            }
-
-            location ~ /loki/api/.* {
-              proxy_pass       http://read:3100\$$request_uri;
-            }
-          }
-        }
-        EOF
+        cp /etc/nginx/nginx-template.conf /etc/nginx/nginx.conf
         /docker-entrypoint.sh nginx -g "daemon off;"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx-template.conf:ro
     ports:
       - "3100:3100"
+    labels:
+      kompose.service.type: LoadBalancer
+      kompose.volume.type: configMap
     healthcheck:
       test: [ "CMD", "service", "nginx", "status" ]
       interval: 10s
@@ -271,6 +240,42 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    labels:
+      kompose.service.type: LoadBalancer
+    extends:
+      file: common-config.yml
+      service: network-deploy-service
+
+  kafka:
+    image: apache/kafka:latest
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -z kafka 9092 || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    labels:
+      kompose.service.type: LoadBalancer
     extends:
       file: common-config.yml
       service: network-deploy-service
@@ -286,6 +291,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    labels:
+      kompose.service.type: LoadBalancer
     extends:
       file: common-config.yml
       service: network-deploy-service
@@ -348,6 +355,8 @@ services:
     env_file:
       - .env
       - .env.${APP_ENV}
+    labels:
+      kompose.service.type: LoadBalancer
     extends:
       file: common-config.yml
       service: microservice-base-config
@@ -364,6 +373,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    labels:
+      kompose.service.type: LoadBalancer
     env_file:
       - .env
       - .env.${APP_ENV}
@@ -384,6 +395,8 @@ services:
     env_file:
       - .env
       - .env.${APP_ENV}
+    labels:
+      kompose.service.type: LoadBalancer
     extends:
       file: common-config.yml
       service: microservice-base-config
@@ -391,8 +404,14 @@ services:
   message:
     image: ggoutos/message:${IMAGE_TAG}
     container_name: message-ms
+    ports:
+      - "9010"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9010/actuator/health/readiness || exit 1" ]
     depends_on:
       rabbit:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     env_file:
       - .env
@@ -404,8 +423,8 @@ services:
   accounts:
     image: ggoutos/accounts:${IMAGE_TAG}
     container_name: accounts-ms
-#    ports:
-#      - "8080:8080"
+    ports:
+      - "8080"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health/readiness || exit 1" ]
     depends_on:
@@ -414,6 +433,10 @@ services:
       accountsdb:
         condition: service_healthy
       configserver:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbit:
         condition: service_healthy
     env_file:
       - .env
@@ -425,8 +448,8 @@ services:
   cards:
     image: ggoutos/cards:${IMAGE_TAG}
     container_name: cards-ms
-#    ports:
-#      - "9000:9000"
+    ports:
+      - "9000"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9000/actuator/health/readiness || exit 1" ]
     depends_on:
@@ -446,8 +469,8 @@ services:
   loans:
     image: ggoutos/loans:${IMAGE_TAG}
     container_name: loans-ms
-#    ports:
-#      - "8090:8090"
+    ports:
+      - "8090"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8090/actuator/health/readiness || exit 1" ]
     depends_on:
