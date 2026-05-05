@@ -22,6 +22,7 @@ target/
 *.ipr
 .aider*
 .ai
+.aiassistant
 .qwen
 .gemini
 opencode.json
@@ -38,5 +39,6 @@ build/
 !**/src/test/**/build/
 
 ### VS Code ###
-.vscode/
+.vscode
+
 

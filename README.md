@@ -1,6 +1,6 @@
-# AGENTS.md - AI Agent Guidance for EazyBank Microservices Platform
+# Microservices Platform
 
-> **Comprehensive Documentation** - Complete guide for developing, building, and deploying the EazyBank microservices platform with Spring Boot 4.0.5, Spring Cloud 2025.1.1, and Java 25.
+> **Comprehensive Documentation** - Complete guide for developing, building, and deploying microservices platform with Spring Boot 4.0.5, Spring Cloud 2025.1.1, and Java 25.
 
 ---
 
@@ -115,7 +115,7 @@ Example: `http://localhost:8072/goutos/bank/accounts/api/fetch?mobileNumber=1234
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│                     EazyBank Microservices Platform                   │
+│                       Microservices Platform                          │
 │                                                                       │
 │                        ┌─────────────────┐                            │
 │                        │  GatewayServer  │                            │
