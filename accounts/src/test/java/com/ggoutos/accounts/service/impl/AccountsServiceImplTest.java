@@ -9,6 +9,7 @@ import com.ggoutos.accounts.repository.AccountsRepository;
 import com.ggoutos.accounts.repository.CustomerRepository;
 import com.ggoutos.utils.dto.AccountsDto;
 import com.ggoutos.utils.dto.CustomerDto;
+import org.springframework.cloud.stream.function.StreamBridge;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,6 +36,9 @@ class AccountsServiceImplTest {
     @Mock
     private CustomerRepository customerRepository;
 
+    @Mock
+    private StreamBridge streamBridge;
+
     @InjectMocks
     private AccountsServiceImpl accountsService;
 
@@ -60,6 +64,8 @@ class AccountsServiceImplTest {
         testCustomerDto.setName("John Doe");
         testCustomerDto.setEmail("john@example.com");
         testCustomerDto.setMobileNumber("9939321212");
+
+        lenient().when(streamBridge.send(anyString(), any())).thenReturn(true);
     }
 
     @Nested

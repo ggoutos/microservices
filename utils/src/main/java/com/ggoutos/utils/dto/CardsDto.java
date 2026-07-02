@@ -37,4 +37,7 @@ public class CardsDto {
     @Schema(description = "Total available amount against a card", example = "90000")
     private int availableAmount;
 
+    @Schema(description = "Availability status for card details when returned from an aggregate API", example = "UNAVAILABLE")
+    private String serviceStatus;
+
 }

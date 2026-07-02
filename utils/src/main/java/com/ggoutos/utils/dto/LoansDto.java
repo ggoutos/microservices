@@ -37,4 +37,7 @@ public class LoansDto {
     @Schema(description = "Total outstanding amount against a loan", example = "99000")
     private int outstandingAmount;
 
+    @Schema(description = "Availability status for loan details when returned from an aggregate API", example = "UNAVAILABLE")
+    private String serviceStatus;
+
 }

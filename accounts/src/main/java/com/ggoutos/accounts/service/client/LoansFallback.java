@@ -8,6 +8,9 @@ public class LoansFallback implements LoansFeignClient {
 
     @Override
     public LoansDto fetchLoanDetails(String correlationId, String mobileNumber) {
-        return null;
+        LoansDto loansDto = new LoansDto();
+        loansDto.setMobileNumber(mobileNumber);
+        loansDto.setServiceStatus("UNAVAILABLE");
+        return loansDto;
     }
 }

@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.Random;
@@ -34,6 +35,7 @@ public class AccountsServiceImpl implements IAccountsService {
      * @param customerDto - CustomerDto Object
      */
     @Override
+    @Transactional
     public void createAccount(CustomerDto customerDto) {
         Customer customer = CustomerMapper.mapToCustomer(customerDto, new Customer());
         Optional<Customer> optionalCustomer = customerRepository.findByMobileNumber(customerDto.getMobileNumber());
@@ -59,6 +61,7 @@ public class AccountsServiceImpl implements IAccountsService {
      * @return boolean indicating if the update of communication status is successful or not
      */
     @Override
+    @Transactional
     public boolean updateCommunicationStatus(Long accountNumber) {
         boolean isUpdated = false;
         if (accountNumber != null) {
@@ -109,6 +112,7 @@ public class AccountsServiceImpl implements IAccountsService {
      * @return boolean indicating if the update of Account details is successful or not
      */
     @Override
+    @Transactional
     public boolean updateAccount(CustomerDto customerDto) {
         boolean isUpdated = false;
         AccountsDto accountsDto = customerDto.getAccountsDto();
@@ -135,6 +139,7 @@ public class AccountsServiceImpl implements IAccountsService {
      * @return boolean indicating if the delete of Account details is successful or not
      */
     @Override
+    @Transactional
     public boolean deleteAccount(String mobileNumber) {
         Customer customer = customerRepository.findByMobileNumber(mobileNumber).orElseThrow(
                 () -> new ResourceNotFoundException("Customer", "mobileNumber", mobileNumber)
