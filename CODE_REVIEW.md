@@ -74,6 +74,10 @@ config properties, email account takeover, root DB access.
 *Fix:* rotate **all** of these today; purge history (`git filter-repo` or BFG); add `.env*`
 (except a committed `.env.example`) to `.gitignore`; move to Kubernetes Secrets backed by an
 external store (External Secrets Operator + Vault/AWS Secrets Manager).
+*Status 2026-07-03:* Partially mitigated. `.gitignore` now excludes local/prod env files and
+generated env ConfigMaps, and the previously tracked env artifacts were removed from the Git
+index while remaining on disk locally. Secrets still require credential rotation and Git
+history purging.
 
 **C2 — All GET requests are unauthenticated at the gateway**
 `gatewayserver/.../SecurityConfig.java:23` — `.pathMatchers(HttpMethod.GET).permitAll()`.
@@ -83,6 +87,8 @@ numbers are enumerable.
 *Fix:* require authentication for all business routes; keep `permitAll` only for
 `/actuator/health/**` and the fallback route. Add object-level authorization (a user may only
 fetch *their own* data — match JWT claim against the requested resource).
+*Status 2026-07-02:* Phase-0 gateway change applied. Business GET routes now require JWT
+authentication and the existing service role checks; object-level authorization remains open.
 
 **C3 — Downstream services have zero security**
 `accounts/pom.xml`, `cards/pom.xml`, `loans/pom.xml` contain no Spring Security /
@@ -98,6 +104,8 @@ Every `application.yml` exposes `shutdown` with `access: unrestricted`
 kills any service.
 *Fix:* remove `shutdown` from the exposure list entirely; rely on the orchestrator for
 lifecycle. Same review for `refresh`/`busrefresh` (state-changing, currently anonymous).
+*Status 2026-07-02:* Fixed for Phase 0. `shutdown` was removed from actuator exposure lists and
+the explicit unrestricted shutdown endpoint blocks were removed.
 
 **C5 — Events can be silently lost (no outbox, no transaction)**
 `AccountsServiceImpl.createAccount()` (`accounts/.../AccountsServiceImpl.java:37-55`): two
@@ -253,9 +261,9 @@ with `spring-retry` where strictness is wanted; decide per environment.
 ## 5. Prioritized Roadmap
 
 **Phase 0 — today (stop the bleeding)**
-1. Rotate GitHub PAT, Gmail app password, config-server password, encryption key, DB passwords; purge `.env.prod` & `env-prod-configmap.yaml` from git history; fix `.gitignore`.
-2. Remove `shutdown` from actuator exposure (all services).
-3. Require auth on business GET routes at the gateway.
+1. Partial: `.gitignore` now excludes local/prod env files and generated env ConfigMaps, and the previously tracked env artifacts were removed from the Git index while remaining on disk locally. Still required: rotate GitHub PAT, Gmail app password, config-server password, encryption key, DB passwords; purge `.env.prod` & `env-prod-configmap.yaml` from Git history.
+2. Done: remove `shutdown` from actuator exposure (all services).
+3. Done: require auth on business GET routes at the gateway.
 
 **Phase 1 — this sprint (security boundary + correctness)**
 4. OAuth2 resource server in accounts/cards/loans; dedicated Keycloak realm; `issuer-uri`.

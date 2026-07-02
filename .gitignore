@@ -1,5 +1,9 @@
-.env*
-!.env
+.env.local
+.env.prod
+.docker/.env.local
+.docker/.env.prod
+.docker/k8s-generated/env-configmap.yaml
+.docker/k8s-generated/env-prod-configmap.yaml
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
