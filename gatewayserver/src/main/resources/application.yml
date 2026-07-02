@@ -12,7 +12,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, refresh, busrefresh, shutdown, metrics, prometheus, gateway, circuitbreakers, circuitbreakereventst, streamcircuitbreakereventst  # Don't expose 'env' or 'configprops'
+        include: health, info, refresh, busrefresh, metrics, prometheus, gateway, circuitbreakers, circuitbreakereventst, streamcircuitbreakereventst  # Don't expose 'env' or 'configprops'
   health:
     readiness-state:
       enabled: true
@@ -22,8 +22,6 @@ management:
     health:
       probes:
         enabled: true
-    shutdown:
-      access: unrestricted
     gateway:
       access: unrestricted
   info:

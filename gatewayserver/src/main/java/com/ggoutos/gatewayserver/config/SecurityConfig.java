@@ -3,7 +3,6 @@ package com.ggoutos.gatewayserver.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -20,10 +19,11 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity serverHttpSecurity) {
         serverHttpSecurity.authorizeExchange(exchanges -> exchanges
-                        .pathMatchers(HttpMethod.GET).permitAll()
+                        .pathMatchers("/actuator/health/**", "/contactSupport").permitAll()
                         .pathMatchers("/goutos/bank/accounts/**").hasRole("ACCOUNTS")
                         .pathMatchers("/goutos/bank/cards/**").hasRole("CARDS")
                         .pathMatchers("/goutos/bank/loans/**").hasRole("LOANS")
+                        .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(oAuth2ResourceServerSpec -> oAuth2ResourceServerSpec
                         .jwt(jwtSpec -> jwtSpec.jwtAuthenticationConverter(grantedAuthoritiesExtractor())));
