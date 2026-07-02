@@ -1,4 +1,7 @@
 # Test configuration for Accounts Service
+build:
+  version: test
+
 spring:
   application:
     name: accounts
@@ -20,6 +23,12 @@ spring:
   h2:
     console:
       enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9999/realms/test
+          jwk-set-uri: http://localhost:9999/realms/test/protocol/openid-connect/certs
   cloud:
     config:
       enabled: false
@@ -27,6 +36,15 @@ spring:
       enabled: false
     bus:
       enabled: false
+    stream:
+      default-binder: kafka
+      bindings:
+        sendCommunication-out-0:
+          producer:
+            auto-startup: false
+        updateCommunication-in-0:
+          consumer:
+            auto-startup: false
   config:
     import: "optional:configserver:http://localhost:8071"
 

@@ -48,11 +48,11 @@ spec:
               key: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
         {{- end }}
         {{- if .Values.resouceserver_enabled }}
-        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK-SET-URI
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
           valueFrom: 
             configMapKeyRef:
               name: {{ .Values.global.configMapName }}
-              key: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK-SET-URI
+              key: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
         {{- end }}
         {{- if .Values.otel_enabled }}
         - name: JAVA_TOOL_OPTIONS

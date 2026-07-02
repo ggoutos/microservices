@@ -53,6 +53,11 @@ spring:
     port: 5672
     username: ${SPRING_RABBITMQ_USER:guest}
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: "http://${KEYCLOAK_HOST:localhost}:${KEYCLOAK_PORT:7080}/realms/${KEYCLOAK_REALM:eazybank}"
   cloud:
     config:
       uri: http://${CONFIG_SERVER_HOST:localhost}:8071
@@ -64,7 +69,7 @@ spring:
     function:
       definition: updateCommunication
     stream:
-      default-binder: ${SPRING_CLOUD_STREAM_DEAFULT_BINDER:kafka} # This line specifies the default binder to use. You can change it to 'rabbit' if you want to use RabbitMQ.
+      default-binder: ${SPRING_CLOUD_STREAM_DEFAULT_BINDER:kafka} # This line specifies the default binder to use. You can change it to 'rabbit' if you want to use RabbitMQ.
       bindings:
         sendCommunication-out-0:
           destination: send-communication

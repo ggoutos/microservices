@@ -20,6 +20,12 @@ spring:
   h2:
     console:
       enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9999/realms/test
+          jwk-set-uri: http://localhost:9999/realms/test/protocol/openid-connect/certs
   cloud:
     config:
       enabled: false
