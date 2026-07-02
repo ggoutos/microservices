@@ -97,6 +97,10 @@ Anyone on the network calls `accounts:8080/api/fetch` directly — the gateway i
 not a boundary.
 *Fix:* add `spring-boot-starter-oauth2-resource-server` to each service and validate the same
 Keycloak JWTs (zero-trust); stop publishing service ports; longer-term add mTLS via a mesh.
+*Status 2026-07-03:* Phase-1 service boundary applied. `accounts`, `cards`, and `loans` are
+now OAuth2 resource servers using the shared Keycloak `issuer-uri`, health probes remain public,
+and business endpoints require the corresponding service role. Object-level authorization,
+network exposure cleanup, and mTLS remain open.
 
 **C4 — Unauthenticated remote shutdown of every service**
 Every `application.yml` exposes `shutdown` with `access: unrestricted`
@@ -116,6 +120,8 @@ unavailable the welcome-communication event vanishes while the account exists.
 table written in the same transaction, drained by a publisher. Also wrap
 create/update/delete service methods in `@Transactional` (today `updateAccount` performs four
 sequential writes that can partially apply).
+*Status 2026-07-03:* Partially addressed for Phase 1. Multi-write account service methods now
+run inside transactions; the outbox/event-delivery guarantee remains open for Phase 2.
 
 **C6 — Feign fallbacks return `null` into the response**
 `CardsFallback.java:11` / `LoansFallback.java:11` return `null`;
@@ -124,6 +130,8 @@ handling. Callers cannot distinguish "no loan" from "loans service down", and do
 consumers NPE.
 *Fix:* return an explicit degraded representation (empty DTO + status field, or omit the field
 and document partial responses), and surface partial-failure via the API contract.
+*Status 2026-07-03:* Fixed for Phase 1. Cards/loans fallbacks now return degraded DTOs with
+`serviceStatus = UNAVAILABLE` instead of `null`.
 
 ### 3.2 High
 
@@ -132,6 +140,8 @@ and document partial responses), and surface partial-failure via the API contrac
 issuer validation; master realm should never serve application tokens.
 *Fix:* create a dedicated realm; use `issuer-uri` (enables iss validation + discovery); add
 audience validation.
+*Status 2026-07-03:* Partially addressed. Gateway and downstream services now use a configurable
+`issuer-uri` for the dedicated `eazybank` realm; audience validation remains open.
 
 **H2 — Internal infrastructure exposed publicly.** `kompose.service.type: LoadBalancer` on
 Keycloak, Prometheus, Grafana, Kafka, RabbitMQ, Redis (compose labels → generated Services).
@@ -153,6 +163,9 @@ the 4 s time-limiter dead config and SLAs unpredictable. The route retry (3 atte
 `RouteConfig.java:76-78`) then multiplies load on an already-slow service by 4×.
 *Fix:* pick one timeout chain (e.g. connect 1 s, response 3 s, TimeLimiter 4 s as the outer
 bound), delete the rest; cap retries at 1–2 with jitter, GET-only (already GET-only — good).
+*Status 2026-07-03:* Fixed for Phase 1. Per-route timeout metadata was removed, the HTTP client
+response timeout is 3 s, the configured TimeLimiter remains the 4 s outer bound, and route retry
+attempts were capped.
 
 **H5 — Rate limiting is trivially bypassable and a SPOF.**
 `RateLimitConfig.java:18-22` keys the limiter on the client-supplied `user` header (rotate the
@@ -162,6 +175,9 @@ degrades for all routes.
 *Fix:* key on the authenticated JWT principal (fall back to client IP from `X-Forwarded-For`
 set by your own edge); set realistic rates; configure `deny-empty-key` deliberately and decide
 fail-open vs fail-closed for Redis outages.
+*Status 2026-07-03:* Partially addressed. The gateway now keys rate limits by authenticated
+principal with forwarded-IP/remote-address fallback, and the Redis bucket was raised to
+10 req/s with burst capacity. Redis outage policy remains a follow-up decision.
 
 **H6 — Weak, collision-prone ID generation; no idempotency.**
 `new Random()` per call for account/card/loan numbers
@@ -190,6 +206,10 @@ in the apps), `server.shutdown: graceful` + `spring.lifecycle.timeout-per-shutdo
 SBOM. The 80 % coverage gate only fires if a developer happens to run `mvn verify`.
 *Fix:* GitHub Actions: build → test → JaCoCo check → OWASP Dependency-Check → image build →
 Trivy scan → push (OIDC, no long-lived creds). Add `mvnw` and CycloneDX SBOM.
+*Status 2026-07-03:* Partially addressed for Phase 1. Maven wrapper and GitHub Actions CI were
+added for `verify`, OWASP Dependency-Check, Jib image builds, and Trivy image scanning. The full
+reactor `mvnw verify` gate now passes on JDK 25. Image push, OIDC publishing,
+provenance/signing, and SBOM generation remain open.
 
 **H10 — Image strategy chaos.** Three build paths (Buildpacks `:spring`, Jib `:jib`, custom
 `accounts/Dockerfile`) while compose expects `ggoutos/*:${IMAGE_TAG}`; all infra images are
@@ -225,13 +245,13 @@ with `spring-retry` where strictness is wanted; decide per environment.
 | M1 | `show-sql: true` logs SQL (and PII parameters end up in Loki) | all three service ymls | off in prod; use datasource-proxy/observability instead |
 | M2 | Generic exception handler returns raw `exception.getMessage()` to clients | `GlobalExceptionHandler` ×3 | generic message + correlation ID; log details server-side |
 | M3 | JPA auditor hardcoded (`"ACCOUNTS_MS"`) — audit trail can't attribute users | `AuditAwareImpl.java:18` ×3 | resolve from `SecurityContext`/JWT once services authenticate |
-| M4 | `updateAccount`/`deleteAccount` multi-write without `@Transactional` | `AccountsServiceImpl.java:112-144` | annotate service methods |
+| M4 | `updateAccount`/`deleteAccount` multi-write without `@Transactional` | `AccountsServiceImpl.java:112-144` | Done: service methods are transactional |
 | M5 | Hand-written static mappers, no null-safety | 4 mapper classes | MapStruct (compile-time, generated, null-aware) |
 | M6 | Tests run on H2 while prod is MySQL — dialect drift; zero integration tests | `*/src/test/resources/application.yml` | Testcontainers MySQL + Kafka; `@ServiceConnection` |
 | M7 | OTel agent path `-javaagent:/app/libs/opentelemetry-javaagent-*.jar` only matches the **Jib** layout — buildpack/Dockerfile images silently lose tracing (and `%X{trace_id}` in logs goes empty) | `.env` / `env-configmap.yaml:7` vs three image layouts | one image strategy; or switch to Micrometer Tracing + OTLP starter (no agent) |
 | M8 | Eureka + Config Server running **inside** K8s duplicate platform features | helm charts for both | K8s DNS + ConfigMaps/ESO (or Spring Cloud Kubernetes) on K8s; keep Eureka for compose-only |
 | M9 | `spring-boot-devtools` declared `runtime` in the **parent**, inherited by everything | `pom.xml:76-81` | remove or confine; verify excluded from images |
-| M10 | Config typos: `SPRING_CLOUD_STREAM_DEAFULT_BINDER` (×2), `com.goutos.gateway` logger (never matches `com.ggoutos`), `circuitbreakereventst` endpoint; `SecurityConfig` duplicates the `DNS_PREFIX` paths as string literals | message/accounts ymls; gateway yml:7,15; `SecurityConfig.java:24-26` | fix names; share the prefix constant |
+| M10 | Config typos: `SPRING_CLOUD_STREAM_DEAFULT_BINDER` (×2), `com.goutos.gateway` logger (never matches `com.ggoutos`), `circuitbreakereventst` endpoint; `SecurityConfig` duplicates the `DNS_PREFIX` paths as string literals | message/accounts ymls; gateway yml:7,15; `SecurityConfig.java:24-26` | Phase 1 fixed the stream binder typo; remaining naming cleanup is open |
 | M11 | Prometheus uses static targets and 5 s scrape | `.docker/prometheus/prometheus.yml` | kubernetes_sd / ServiceMonitor; 15–30 s |
 | M12 | Helm hygiene: all charts frozen at `0.1.0`, no `Chart.lock`, common chart typed `application` not `library`, PVCs 100 Mi, no rollout strategy | `.docker/helm/**`, `k8s-generated/*pvc*` | version bumps, lock deps, fix type, size PVCs |
 | M13 | REST design: verbs in paths (`/create`, `/fetch`), `417 Expectation Failed` misused for failed updates, no URI versioning, boolean service returns | controllers ×3 | resource-oriented paths `/api/v1/accounts`, 404/409/204 semantics |
@@ -240,7 +260,7 @@ with `spring-retry` where strictness is wanted; decide per environment.
 ### 3.4 Low
 
 - `guest:guest` RabbitMQ fallback defaults in ymls; Eureka dashboard unauthenticated; no access logging at the gateway.
-- No `.dockerignore`, no `Makefile`/Taskfile, no `mvnw` (also listed under H9), 124 KB README that drifts from code.
+- No `.dockerignore`, no `Makefile`/Taskfile, 124 KB README that drifts from code.
 - Magic numbers in ID generation; stray indentation (`CustomersServiceImpl.java:20`); commented-out code (`AccountsController.java:63` references a nonexistent `username` variable; dead dependency blocks in `accounts/pom.xml:86-93`).
 - CSRF disabled at the gateway (`SecurityConfig.java:31`) — **acceptable** for a stateless,
   token-based API (no cookies), but document it as a deliberate decision.
@@ -266,10 +286,13 @@ with `spring-retry` where strictness is wanted; decide per environment.
 3. Done: require auth on business GET routes at the gateway.
 
 **Phase 1 — this sprint (security boundary + correctness)**
-4. OAuth2 resource server in accounts/cards/loans; dedicated Keycloak realm; `issuer-uri`.
-5. Fix Feign fallbacks (no nulls) and add `@Transactional` to multi-write service methods.
-6. Consolidate gateway timeouts; fix rate-limiter key + rates.
-7. CI pipeline (build, test, JaCoCo, Trivy, dependency check) + `mvnw`.
+4. Done for sprint scope: OAuth2 resource server in accounts/cards/loans; configurable
+   dedicated Keycloak realm; `issuer-uri`. Remaining: audience/object-level authorization.
+5. Done: Feign fallbacks no longer return `null`; account multi-write service methods are
+   transactional.
+6. Done for sprint scope: gateway timeout chain consolidated; rate-limiter key and rates fixed.
+7. Done for sprint scope: Maven wrapper and CI pipeline for build/test/JaCoCo, Dependency-Check,
+   Jib image build, and Trivy image scans. Remaining: image push, OIDC, signing/provenance, SBOM.
 
 **Phase 2 — next sprint (reliability)**
 8. Outbox/Spring Modulith events; DLQs; idempotent producer + consumers; partition keys.
@@ -409,5 +432,6 @@ infrastructure as parallel deep-dives), each reading source files directly. Key 
 re-verified against the tree before publication (git-tracked secrets via `git ls-files`,
 Helm image drift via grep, rate-limiter and service-layer code re-read). Build verification
 was attempted and fails on JDK 21 (`release version 25 not supported`) — the JaCoCo gate and
-test suite could therefore not be independently executed in this environment; test quality was
-assessed by reading the test sources.
+test suite could therefore not be independently executed in that environment; test quality was
+assessed by reading the test sources. Phase-1 implementation was verified on 2026-07-03 with
+`.\mvnw.cmd -B -ntp verify` on JDK 25.
