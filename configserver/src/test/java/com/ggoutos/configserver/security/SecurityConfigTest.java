@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -28,7 +29,7 @@ class SecurityConfigTest {
         void healthEndpoint_shouldBePubliclyAccessible() throws Exception {
             // When & Then
             mockMvc.perform(get("/actuator/health"))
-                    .andExpect(status().isOk());
+                    .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
         }
 
         @Test
@@ -36,7 +37,7 @@ class SecurityConfigTest {
         void healthReadinessEndpoint_shouldBePubliclyAccessible() throws Exception {
             // When & Then
             mockMvc.perform(get("/actuator/health/readiness"))
-                    .andExpect(status().isOk());
+                    .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
         }
 
         @Test

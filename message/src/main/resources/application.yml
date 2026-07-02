@@ -13,7 +13,7 @@ spring:
     function:
       definition: email|sms # This line defines the function composition. It means that the output of the 'email' function will be sent to the input of the 'sms' function. You can change this to 'email' or 'sms' if you want to use them separately.
     stream:
-      default-binder: ${SPRING_CLOUD_STREAM_DEAFULT_BINDER:kafka} # This line specifies the default binder to use. You can change it to 'rabbit' if you want to use RabbitMQ.
+      default-binder: ${SPRING_CLOUD_STREAM_DEFAULT_BINDER:kafka} # This line specifies the default binder to use. You can change it to 'rabbit' if you want to use RabbitMQ.
       bindings:
         emailsms-in-0:
           destination: send-communication
